@@ -6,19 +6,23 @@
   <a href="docs/DEVELOPING.md">Developing</a>
 </p>
 
-Beiwagen (German for "sidecar") is free firmware for the M-VAVE FM-1 that rides along with an OP-1 Field. It needs
-an OP-1 Field: the FM-1 plugs into it with one USB cable, and the OP-1, as the USB host, sends its tape tracks to the
-FM-1 and records what comes back.
+Beiwagen is free firmware for the M-VAVE FM-1 that works together with an OP-1 Field, and only with one. The FM-1
+plugs into the OP-1 with one USB cable; the OP-1, as the USB host, sends its tape tracks to the FM-1 and records what
+comes back.
 
 **Works now** (tested on an FM-1 with an OP-1 Field, firmware 1.7.3):
 
 - **OP-1 → FM-1:** with the OP-1 in USB mode 8, its four tape tracks arrive as four stereo pairs, 44.1 kHz.
 - **FM-1 → OP-1:** the pair chosen with KNOB1 plays on the FM-1 and goes back to the OP-1 as its USB input, to be
   recorded onto another tape track.
-- **Diagnostics page** (GLO): the stream's counters, a meter per channel, the host's last USB requests.
+- **Keys → OP-1:** the FM-1's keys play the OP-1 over USB-MIDI (OCT−/+ for octaves; channel and velocity on HOME).
+  On the OP-1, set its MIDI to receive notes, not only send them.
+- **Diagnostics** (HOME, second page): the stream's counters, a meter per channel, the host's last USB requests.
 
-**Planned:** effects on the chosen track (bypass on FX), modulation (LFO, ENV), keys as MIDI to the OP-1, a
-sequencer and arpeggiator, presets, and later synths of its own.
+**Built, not yet tested on an FM-1:** effects on the chosen track: distortion, filter, chorus, delay and reverb in
+series, a page each (GLO, then SELECT), GLO again switches the page's effect on or off, FX bypasses them all.
+
+**Planned:** modulation (LFO, ENV), a sequencer and arpeggiator, presets, and later synths of its own.
 
 The OP-1 puts its USB input on the selected track, together with what is played live, so a track is effected and
 recorded onto *another* track: select track 2, choose track 1 on the FM-1, play the tape and record.

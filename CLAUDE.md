@@ -10,8 +10,11 @@ has them (easy merges).
 Proven on hardware (2026-11-15, OP-1 Field 1.7.3): the FM-1 is full-speed USB only; the OP-1 as host streams to it at
 44.1 kHz only (48 kHz: a burst, then nothing); 10-ch packets need the EP3 read every TIMER5 tick (0.6 ms on the
 wire); the OP-1 puts its USB input on the selected track, together with live playing, so live effects loop: effect
-track A, record onto track B. Never claim untested features (effects, MIDI, sequencer) as working.
+track A, record onto track B. The keys play the OP-1 over USB-MIDI (OP-1 MIDI set to receive notes). Never claim
+untested features (effects, sequencer) as working.
 
+- Beiwagen app layout: `app.c` (sections, audio), `bw_ui.h` (page kit: header, body strip, 4 knob rows), `bw_home.h`
+  (HOME: overview, USB diagnostics, scope), `bw_keys.h` (keys → USB-MIDI); unity-included headers, static functions.
 - Product plan (control map): GLO through-effects, FX bypass, SEQ sequencer, ARP arpeggiator, PLAY transport, HOME
   overview + setup, LFO/ENV modulation routed to the effect chain (later the synth), SELECT pages, KNOB1-4 page
   params, ALGORITHM source (OP-1 pair), PRESETS presets/patterns, MASTER level. SEL/EDIT/SAVE/REC unassigned.
@@ -19,15 +22,15 @@ track A, record onto track B. Never claim untested features (effects, MIDI, sequ
   code does not edit one).
 - Unity build: `firmware/sys/fw.c` includes every `.c`; include order matters. Apps live in `firmware/apps/NAME/`
   (`app.c`, optional `*.c` / `*.cc` built separately with the FPU, `build.txt`, `third_party.txt`, `name.txt`,
-  `logo.png`); `--app NAME` selects one (default `audiobase`; `demo` is the small synth example).
+  `logo.png`); `--app NAME` selects one (default `beiwagen`; `demo` is the small synth example).
 - C in the unity build is built without FPU (as ORBIT); the app's other `*.c` and `*.cc` with `-mcpu=r3 -mfprev1`.
-  Cross with ints/pointers only (`apps/audiobase/ab_fw.h`). No static constructors (build fails on `.init_array`).
+  Cross with ints/pointers only (`apps/beiwagen/bw_fw.h`). No libc on the target: no `NULL`, use 0. No static constructors (build fails on `.init_array`).
 - `build.txt`: `fs 44|48` (the app's codec rate; beiwagen: 44), `define FW_USB_PLAY_CH=N`, `define FW_USB_PLAY=1` (the computer plays to the FM-1), `define FELUCCA_UAC=1` (it records the FM-1),
   `define FW_USB_PRODUCT="FM-1"` (must contain "FM-1": the installers look for it), `c PATH`, `include DIR`, `small FILE`.
 - USB audio (`sys/usb.c`): playback at the codec's rate family, FW_USB_PLAY_CH channels (one pair heard), adaptive, resampled to the codec clock; capture at the codec's rate,
   async, the codec's samples bit for bit (`uac_tap` in `sys/audio.c`, after the app's volume). Audio streaming
-  interfaces come before MIDI in the AC header (macOS 15 and older need that). Both are serviced from TIMER5 at 2 kHz,
-  nested into the render (`sys/main.c`).
+  interfaces come before MIDI in the AC header (macOS 15 and older need that). Both are serviced from TIMER5 (USB poll 2 kHz, the
+  playback endpoint every 10 kHz tick), nested into the render (`sys/main.c`).
 - The sample rate lives in `firmware/sys/fw_rate.h` (selected per app by build.txt `fs`); beiwagen runs the 44.1 kHz
   family (44,117.6 Hz). `FW_FS` is the rounded integer, `FW_FS_HZ` the exact float.
 - `firmware/hal/`, `firmware/loader/`, `sys/ota.c`, `sys/recovery.c`, `sys/storage.c`, `sys/midi_uart.c` come from

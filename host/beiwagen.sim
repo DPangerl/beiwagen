@@ -1,4 +1,5 @@
-# the computer plays a 1 kHz sine at -6 dBFS: MASTER full, half (-12 dB more), off; then the visualizer (GLO) and back
+# the OP-1 plays a 1 kHz sine at -6 dBFS on the source pair and records the FM-1: MASTER full, half, off; then the
+# pages: HOME overview (the knobs turned), USB, SCOPE (SELECT), the FX section (GLO), the keys as MIDI, back HOME
 frames 20
 usbtone 1000 -6
 usbrec 2
@@ -10,21 +11,46 @@ screen build/host/out/beiwagen_half.ppm
 master 0
 frames 40
 master 1023
-frames 20
-btn GLO down
-frames 1
-btn GLO up
+knob K2 1
+knob K3 2
+knob ALGO 1
+frames 10
+screen build/host/out/beiwagen_knobs.ppm
+knob SELECT 1
+frames 60
+screen build/host/out/beiwagen_usb.ppm
+knob SELECT 1
 frames 120
-screen build/host/out/beiwagen_vis.ppm
+screen build/host/out/beiwagen_scope.ppm
 leds
 btn GLO down
 frames 1
 btn GLO up
-frames 60
-screen build/host/out/beiwagen_diag.ppm
+frames 5
 btn GLO down
 frames 1
 btn GLO up
+knob SELECT 3
+knob K1 -10
+frames 10
+btn GLO down
+frames 1
+btn GLO up
+frames 10
+screen build/host/out/beiwagen_fx.ppm
+key 0 down
+frames 2
+key 0 up
+btn OCT_UP down
+frames 1
+btn OCT_UP up
+key 12 down
+frames 2
+key 12 up
+frames 2
+btn HOME down
+frames 1
+btn HOME up
 frames 5
 screen build/host/out/beiwagen_back.ppm
 leds
