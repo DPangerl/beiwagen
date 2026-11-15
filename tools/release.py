@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 npi3pak
-# Modified for Beiwagen, 2026: the beiwagen app, at its build.txt rate
+# Modified for Beiwagen, 2026 (Daniel Pangerl): the beiwagen app, at its build.txt rate, identity FM-1_14923XY
 """Build the Beiwagen release folder: the package, its checksum and every licence it needs.
 
   tools/release.py X.Y            -> build/release-X.Y/
-      beiwagen-X.Y.fwsc           the package, 44.1 kHz (identity FM-1_9XY, version X.Y on the splash)
+      beiwagen-X.Y.fwsc           the package, 44.1 kHz (identity FM-1_14923XY, version X.Y on the splash)
       SHA256SUMS                  its SHA-256
       LICENSE LICENSING.md LICENSES/   GPL-3.0 and the third-party licences (the package holds Apache-2.0 SDK files)
 
@@ -26,7 +26,7 @@ VARIANTS = [""]                 # file name suffixes; the rate is the app's (bui
 
 def main():
     if len(sys.argv) != 2 or not re.fullmatch(r"\d\.\d(-[A-Za-z0-9]+)?", sys.argv[1]):
-        raise SystemExit("usage: tools/release.py X.Y   (one digit each: the identity is FM-1_9XY)")
+        raise SystemExit("usage: tools/release.py X.Y   (one digit each: the identity is FM-1_14923XY)")
     version = sys.argv[1]
     out = SRC / "build" / f"release-{version}"
     env = {**os.environ, "JIELI_TOOLCHAIN": os.environ.get("JIELI_TOOLCHAIN", str(Path.home() / ".jieli" / "toolchain"))}

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 # Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
-# Modified for Beiwagen, 2026 (Daniel Pangerl): build.txt `fs`, the default app beiwagen
+# Modified for Beiwagen, 2026 (Daniel Pangerl): build.txt `fs`, the default app beiwagen, identity FM-1_14923XY
 """Build the FM-1 firmware: the app, the update loader and an installable .fwsc package.
 
   tools/build.py [--release X.Y[-suffix]] [--name NAME]
@@ -71,7 +71,7 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_900"                # package identity; release builds are FM-1_9XY
+PRODUCT = "FM-1_1492300"           # package identity; release builds are FM-1_14923XY
 VERSION = None                      # FW_VERSION for release builds (default: firmware/sys/fw.c)
 
 
@@ -482,7 +482,7 @@ def build_tag():
 def main():
     global PRODUCT, VERSION
     ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string X.Y")
+    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_14923XY, version string X.Y")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK, else tools/sdk)")
     ap.add_argument("--app", default=APP, help=f"firmware/apps/APP to build (default: {APP})")
     ap.add_argument("--fs", choices=("44", "48"),
@@ -497,7 +497,7 @@ def main():
         m = re.fullmatch(r"(\d)\.(\d)(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y or X.Y-suffix, one digit each")
-        PRODUCT = "FM-1_9" + m[1] + m[2]
+        PRODUCT = "FM-1_14923" + m[1] + m[2]
         VERSION = a.release.upper()
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK

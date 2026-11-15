@@ -47,8 +47,9 @@ untested features (effects, sequencer) as working.
   `fw_audio_hold` so the app does not render; `fm1_cstart` raises the supplies to stock (SLOOP 2.7). Keep these.
 - Web installer: `web/` (fm1ota.js / fm1pkg.js are SLOOP 2.7's; fm1ota.js's FM1_PORT also takes the loader's macOS names). `web/make_site.py [--release
   build/release-X.Y]` -> `build/site`; `node web/test_web.mjs PKG` is the protocol test.
-- Releases: tag `vX.Y` (one digit each, identity FM-1_9XY) -> `.github/workflows/release.yml` (`tools/release.py`) ->
-  `pages.yml`. Release notes in `docs/releases/X.Y.md`. `LICENSE`, `LICENSING.md`, `LICENSES/` travel with every package.
+- Releases: by hand (BUILDING.md): `tools/release.py X.Y`, tag `vX.Y` (one digit each, identity FM-1_14923XY; the loader
+  keeps `ota-FM-1_900`), `gh release create`. Actions are disabled on origin (they cost money): never re-enable or trigger them.
+  The Firmware Hub card is `fmhub.json`. Release notes in `docs/releases/X.Y.md`. `LICENSE`, `LICENSING.md`, `LICENSES/` travel with every package.
 - New files carry `SPDX-License-Identifier: GPL-3.0-only`; keep the existing copyright headers. A file changed for
   Beiwagen gets a line "Modified for Beiwagen, 2026 (Daniel Pangerl): what". A new third-party part goes into LICENSING.md,
   README's licence table, LICENSES/ and the installer's Licences section.

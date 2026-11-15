@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
  * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
- * Modified for FM1_AudioBase, 2026: FELUCCA_UAC from the app */
+ * Modified for FM1_AudioBase, 2026: FELUCCA_UAC from the app
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): identity FM-1_1492300 */
 #include <stdint.h>
 #include "fm1_time.h"
 #include "fm1_sys.h"
@@ -28,7 +29,7 @@
 #define FW_UART 1
 #endif
 #ifndef FELUCCA_ID
-#define FELUCCA_ID "FM-1_900"
+#define FELUCCA_ID "FM-1_1492300"
 #endif
 #ifndef FELUCCA_OTA_DRYRUN
 #define FELUCCA_OTA_DRYRUN 0
