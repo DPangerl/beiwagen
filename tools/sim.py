@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
+# Modified for Beiwagen, 2026 (Daniel Pangerl): --fs from the app's build.txt, the default app beiwagen
 """Build the host simulator (the app's C code with a stub HAL) and run a script.
 
   tools/sim.py [SCRIPT]          default script: host/<app>.sim
-  tools/sim.py --app demo        another firmware/apps/ app (default: audiobase)
+  tools/sim.py --app demo        another firmware/apps/ app (default: beiwagen)
   tools/sim.py --no-sanitize     faster build, no ASan/UBSan
   tools/sim.py --test            host tests (flash storage) instead of a script
 
@@ -105,10 +106,11 @@ def main():
     ap.add_argument("--app", default=build.APP)
     ap.add_argument("--no-sanitize", action="store_true")
     ap.add_argument("--test", action="store_true")
-    ap.add_argument("--fs", choices=("44", "48"), default="48")
+    ap.add_argument("--fs", choices=("44", "48"))
     a = ap.parse_args()
     build.set_app(a.app)
-    build.set_fs(a.fs)
+    if a.fs:
+        build.set_fs(a.fs)
     a.script = a.script or str(SRC / "host" / f"{a.app}.sim")
     if a.test:
         return subprocess.run([str(compile_host("storage_test", not a.no_sanitize))]).returncode

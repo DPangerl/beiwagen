@@ -2,7 +2,10 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
  * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
  * Modified for MOOD_FM1, 2026: FW_USB_PLAY, FW_USB_PRODUCT
- * Modified for FM1_AudioBase, 2026: FELUCCA_UAC at the codec's rate beside FW_USB_PLAY (duplex), stereo playback */
+ * Modified for FM1_AudioBase, 2026: FELUCCA_UAC at the codec's rate beside FW_USB_PLAY (duplex), stereo playback
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): playback at the codec's rate family (an OP-1 Field host: 44.1 kHz),
+ * FW_USB_PLAY_CH channels (one pair heard, each channel's peak), SET_CUR on EP3, usb_diag (counters, the host's
+ * last control requests) */
 /* USB full-speed device on USB0: a class-compliant USB-MIDI interface.
  * All SIE traffic happens in usb_poll(), called from the TIMER5 ISR at 2 kHz,
  * so INDEX is never shared and no USB IRQ is needed. MIDI in goes to a ring
@@ -111,9 +114,15 @@ static struct {
  * starts, its high point (a render reads FW_BLOCK frames in one go, the packets come one a ms), and smoothed over
  * 64 renders, so the packets' beat against the renders does not reach the pitch. The render must find its
  * FW_BLOCK frames and a late packet or two: the reader starts at PB_TARGET. */
-#define PB_RATE 48000u
-#define PB_MAXF 49u                                      /* frames in the largest packet: 48 + 1 */
-#define PB_MAXP (PB_MAXF * 4u)
+#define PB_RATE (FW_FS48 ? 48000u : 44100u)              /* the codec's family (--fs): a host may offer one rate only */
+#define PB_MAXF (PB_RATE / 1000u + 2u)                   /* frames in the largest packet, with room for a host's own clock */
+#ifndef FW_USB_PLAY_CH
+#define FW_USB_PLAY_CH 2                                 /* channels the host plays (build.txt): one pair is heard */
+#endif
+#define PB_CH ((uint32_t)FW_USB_PLAY_CH)
+#define PB_MAXP (PB_MAXF * 2u * PB_CH)
+_Static_assert(PB_CH >= 2u && PB_CH <= 10u && !(PB_CH & 1u), "FW_USB_PLAY_CH: 2, 4, ... 10");
+_Static_assert(PB_MAXP <= 1023u, "a full-speed isochronous packet");
 #define PB_N 1024u                                       /* the ring, frames; a power of two (21 ms) */
 #define PB_TARGET 416u                                   /* the fill a render starts with (8.7 ms) */
 #define PB_HIGH 832u                                     /* over this the reader was held up: back to PB_TARGET */
@@ -135,6 +144,9 @@ static struct {
     int32_t fill_q8;             /* the fill when a render starts, smoothed */
     int32_t step;                /* this render's step, Q16 ring frames per output frame */
     uint32_t starts, pkts, drops, ovr, dry, skips;   /* streams; packets; ring full; RXCSR1 overrun; dry; held up */
+    uint32_t last_bytes;         /* the size of the last packet */
+    volatile uint8_t sel;        /* the pair heard: channels 2 sel, 2 sel + 1 (the main loop sets it) */
+    volatile uint16_t peak[PB_CH];   /* each channel's peak since the main loop last read it */
 } pb;
 #endif
 
@@ -215,7 +227,7 @@ static const uint8_t CFG_DESC[] = {
     9, 4, 0, 0, 0, 1, 1, 0, 0,
 #if FELUCCA_UAC && FW_USB_PLAY
     11, 0x24, 1, 0x00, 0x01, 53, 0, 3, PLAY_IF, UAC_AS_IF, 1,   /* AC header 1.00: both audio streams, then MIDI */
-    12, 0x24, 2, 1, 0x01, 0x01, 0, 2, 0x03, 0x00, 0, 0, /* input terminal 1: USB streaming, 2 ch (L R) */
+    12, 0x24, 2, 1, 0x01, 0x01, 0, PB_CH, PB_CH == 2u ? 0x03 : 0x00, 0x00, 0, 0,   /* input terminal 1: USB streaming (2 ch: L R) */
     9, 0x24, 3, 2, 0x01, 0x03, 0, 1, 0,                 /* output terminal 2: speaker, from 1 */
     12, 0x24, 2, 3, 0x03, 0x06, 0, 2, 0x03, 0x00, 0, 0, /* input terminal 3: line, 2 ch (L R) */
     9, 0x24, 3, 4, 0x01, 0x01, 0, 3, 0,                 /* output terminal 4: USB streaming, from 3 */
@@ -225,7 +237,7 @@ static const uint8_t CFG_DESC[] = {
     9, 0x24, 3, 2, 0x01, 0x01, 0, 1, 0,                 /* output terminal 2: USB streaming, from 1 */
 #elif FW_USB_PLAY
     10, 0x24, 1, 0x00, 0x01, 31, 0, 2, PLAY_IF, 1,      /* AC header 1.00: audio + MIDI streaming */
-    12, 0x24, 2, 1, 0x01, 0x01, 0, 2, 0x03, 0x00, 0, 0, /* input terminal 1: USB streaming, 2 ch (L R) */
+    12, 0x24, 2, 1, 0x01, 0x01, 0, PB_CH, PB_CH == 2u ? 0x03 : 0x00, 0x00, 0, 0,   /* input terminal 1: USB streaming (2 ch: L R) */
     9, 0x24, 3, 2, 0x01, 0x03, 0, 1, 0,                 /* output terminal 2: speaker, from 1 */
 #else
     9, 0x24, 1, 0x00, 0x01, 9, 0, 1, 1,
@@ -244,8 +256,8 @@ static const uint8_t CFG_DESC[] = {
     9, 4, PLAY_IF, 0, 0, 1, 2, 0, 0,                    /* IF2 audio streaming, alt 0: no bandwidth */
     9, 4, PLAY_IF, 1, 1, 1, 2, 0, 0,                    /* alt 1: the stream */
     7, 0x24, 1, 1, 1, 0x01, 0x00,                       /* AS general: terminal 1, delay 1, PCM */
-    11, 0x24, 2, 1, 2, 2, 16, 1, PB_RATE & 0xFF, (PB_RATE >> 8) & 0xFF, PB_RATE >> 16,
-                                                        /* type I: 2 ch, 16 bit, 48 kHz only */
+    11, 0x24, 2, 1, PB_CH, 2, 16, 1, PB_RATE & 0xFF, (PB_RATE >> 8) & 0xFF, PB_RATE >> 16,
+                                                        /* type I: PB_CH, 16 bit, one rate */
     9, 5, 0x03, 0x09, PB_MAXP & 0xFF, PB_MAXP >> 8, 1, 0, 0,   /* EP3 OUT isochronous adaptive, 1 ms */
     7, 0x25, 1, 0x00, 0, 0, 0,                          /* CS endpoint: one rate, no controls */
 #endif
@@ -443,7 +455,7 @@ static void usb_play_gate(int again)
     if (on) {
         pb.starts++;
         sie_wr(S_INDEX, 3);
-        sie_wr(S_RXMAXP, PB_MAXP);
+        sie_wr(S_RXMAXP, 0xFF);                         /* as EP1: the largest (MUSBFSFC counts 8-byte units) */
         sie_wr(S_RXCSR1, 0x90);                         /* ClrDataTog + FlushFIFO (as EP1's RX) */
         sie_wr(S_RXCSR2, 0x40);                         /* ISO */
     }
@@ -535,6 +547,23 @@ static void e0_send(const uint8_t *p, uint16_t len, uint16_t wlen)
     e0_chunk();
 }
 
+#if FW_USB_PLAY
+/* The host's last control requests, for usb_diag (TIMER5 writes, the main loop reads; an entry may be torn) */
+static fw_usb_req_t usb_log[FW_USB_LOG];
+static volatile uint32_t usb_log_w;
+
+static void usb_log_setup(const uint8_t *s)
+{
+    fw_usb_req_t *e = &usb_log[usb_log_w % FW_USB_LOG];
+    e->type = s[0];
+    e->req = s[1];
+    e->value = (uint16_t)(s[2] | s[3] << 8);
+    e->index = (uint16_t)(s[4] | s[5] << 8);
+    e->ms = fm1_ms;
+    usb_log_w++;
+}
+#endif
+
 static void ep0_service(void)
 {
     static const uint8_t zero2[2];
@@ -595,6 +624,9 @@ static void ep0_service(void)
     for (i = 0; i < 8u; i++)
         s[i] = ep0buf[i];
     usb.setups++;
+#if FW_USB_PLAY
+    usb_log_setup(s);
+#endif
     wvalue = (uint16_t)(s[2] | s[3] << 8);
     wlength = (uint16_t)(s[6] | s[7] << 8);
     switch ((uint32_t)s[0] << 8 | s[1]) {
@@ -719,7 +751,7 @@ static void ep0_service(void)
 #endif
 #if FELUCCA_UAC
     case 0x2201:                                        /* SET_CUR, endpoint: sampling frequency */
-        if (s[4] != 0x84u || s[3] != 1u)
+        if ((s[4] != 0x84u && !(FW_USB_PLAY && s[4] == 0x03u)) || s[3] != 1u)   /* EP4, or EP3 (one rate) */
             goto stall;
         if (wlength) {
             uac.e0_rx = 1;
@@ -732,7 +764,7 @@ static void ep0_service(void)
     case 0xA282:
     case 0xA283: {
         static const uint8_t RATE[3] = {UAC_RATE & 0xFF, (UAC_RATE >> 8) & 0xFF, UAC_RATE >> 16};
-        if (s[4] != 0x84u || s[3] != 1u)
+        if ((s[4] != 0x84u && !(FW_USB_PLAY && s[4] == 0x03u)) || s[3] != 1u)   /* EP4, or EP3 (one rate) */
             goto stall;
         e0_send(RATE, 3, wlength);
         return;
@@ -1177,13 +1209,28 @@ static void usb_play_rx(void)
     if (csr & 0x04u)                                    /* the packet before was not read in time */
         pb.ovr++;
     n = sie_rd(S_RXCOUNT1) | (sie_rd(S_RXCOUNT2) << 8);
-    n = (n > PB_MAXP ? PB_MAXP : n) / 4u;
+    pb.last_bytes = n;
+    n = (n > PB_MAXP ? PB_MAXP : n) / (2u * PB_CH);
     fm1_usb_rx_sync();
     pb.pend = 0;
     pb.pkts++;
+    if (PB_CH > 2u) {                                   /* each channel's peak (the main loop's meters) */
+        uint32_t c;
+        for (c = 0; c < PB_CH; c++) {
+            uint32_t pk = pb.peak[c];
+            for (i = 0; i < n; i++) {
+                const uint8_t *q = pbrx + 2u * (PB_CH * i + c);
+                const int32_t v = (int16_t)(q[0] | q[1] << 8);
+                const uint32_t a = (uint32_t)(v < 0 ? -v : v);
+                pk = a > pk ? a : pk;
+            }
+            pb.peak[c] = (uint16_t)(pk > 65535u ? 65535u : pk);
+        }
+    }
     if (PB_N - (w - pb_r) >= n) {
+        const uint32_t o = 4u * (pb.sel < PB_CH / 2u ? pb.sel : 0u);
         for (i = 0; i < n; i++) {
-            const uint8_t *q = pbrx + 4u * i;
+            const uint8_t *q = pbrx + 2u * PB_CH * i + o;
             pb_ring[(w + i) & (PB_N - 1u)] = (uint32_t)q[0] | (uint32_t)q[1] << 8 | (uint32_t)q[2] << 16 |
                                              (uint32_t)q[3] << 24;
         }
@@ -1210,6 +1257,45 @@ static void usb_play_nested(void)
 
 static void usb_play_enable(int on) { pb.want = (uint8_t)(on != 0); }   /* the main loop */
 static int usb_play_state(void) { return pb.alt ? (pb.on && pb.play ? 2 : 1) : 0; }   /* 0 no stream, 1 the host plays, 2 heard */
+
+static void usb_play_select(uint32_t pair) { pb.sel = (uint8_t)(pair < PB_CH / 2u ? pair : 0u); }   /* the main loop */
+
+/* the main loop: each channel's peak (0..32768) since the last call into pk[0 .. PB_CH - 1] (2 ch: none); the count */
+static uint32_t usb_play_peaks(uint16_t *pk)
+{
+    uint32_t c;
+    for (c = 0; c < PB_CH; c++) {
+        pk[c] = pb.peak[c];
+        pb.peak[c] = 0;                                 /* (a peak from a packet in between is lost: a meter) */
+    }
+    return PB_CH;
+}
+
+static void usb_diag(fw_usb_diag_t *d)                  /* the main loop */
+{
+    const uint32_t w = usb_log_w;
+    uint32_t i;
+    d->rate = PB_RATE;
+    d->ch = PB_CH;
+    d->bytes = pb.last_bytes;
+    d->alt = pb.alt;
+    d->pkts = pb.pkts;
+    d->starts = pb.starts;
+    d->drops = pb.drops;
+    d->ovr = pb.ovr;
+    d->dry = pb.dry;
+    d->skips = pb.skips;
+    d->resets = usb.resets;
+    d->setups = usb.setups;
+#if FELUCCA_UAC
+    d->rate_sets = uac.rate_sets;
+#else
+    d->rate_sets = 0;
+#endif
+    d->nreq = w < FW_USB_LOG ? w : FW_USB_LOG;
+    for (i = 0; i < d->nreq; i++)
+        d->req[i] = usb_log[(w - 1u - i) % FW_USB_LOG];
+}
 
 static void usb_play_prime(void)                        /* the reader: PB_TARGET frames behind the writer */
 {

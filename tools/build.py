@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 # Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
+# Modified for Beiwagen, 2026 (Daniel Pangerl): build.txt `fs`, the default app beiwagen
 """Build the FM-1 firmware: the app, the update loader and an installable .fwsc package.
 
   tools/build.py [--release X.Y[-suffix]] [--name NAME]
@@ -56,7 +57,7 @@ CFPUFLAGS = ["-mcpu=r3", "-mfprev1", "-O2", "-std=gnu99", "-fno-math-errno", "-f
 CFPUFLAGS = ["-mcpu=r3", "-mfprev1", "-O2", "-std=gnu99", "-fno-math-errno", "-fno-builtin-printf",
              "-ffunction-sections", "-fdata-sections", "-Wall", "-Wno-unused-function", "-Wframe-larger-than=1024",
              "-Ifirmware/sys"]
-APP = os.environ.get("FW_APP", "audiobase")   # firmware/apps/APP: --app
+APP = os.environ.get("FW_APP", "beiwagen")   # firmware/apps/APP: --app
 FS48 = os.environ.get("FW_FS48", "1") == "1"   # the 48 kHz codec clock, the default (firmware/sys/fw_rate.h); --fs 44
 CXX_TARGET_ONLY = ["firmware/cxx/runtime.cc"]
 LIBS = ["libm.a", "libcompiler_rt.a"]
@@ -156,10 +157,10 @@ def stale(obj, dep):
 
 def app_build_txt():
     """firmware/apps/APP/build.txt: `c PATH` (C built with the FPU), `include DIR`, `define NAME[=VALUE]`,
-    `small FILE` (one of the app's own *.c, built for size: -Os in place of -O2); paths relative to SRC (they may
-    reach beside it: ../Source/...)"""
+    `small FILE` (one of the app's own *.c, built for size: -Os in place of -O2), `fs 44|48` (the codec rate the
+    app needs; --fs overrides); paths relative to SRC (they may reach beside it: ../Source/...)"""
     f = app_dir() / "build.txt"
-    out = {"c": [], "include": [], "define": [], "small": []}
+    out = {"c": [], "include": [], "define": [], "small": [], "fs": []}
     if not f.exists():
         return out
     for no, ln in enumerate(f.read_text().splitlines(), 1):
@@ -168,7 +169,9 @@ def app_build_txt():
             continue
         kind, _, arg = ln.partition(" ")
         if kind not in out or not arg.strip():
-            raise SystemExit(f"{f}:{no}: expected `c PATH`, `include DIR`, `define NAME[=VALUE]` or `small FILE`")
+            raise SystemExit(f"{f}:{no}: expected `c PATH`, `include DIR`, `define NAME[=VALUE]`, `small FILE` or `fs 44|48`")
+        if kind == "fs" and arg.strip() not in ("44", "48"):
+            raise SystemExit(f"{f}:{no}: `fs 44` or `fs 48`")
         out[kind].append(arg.strip())
     return out
 
@@ -449,6 +452,9 @@ def set_app(name):
     global APP
     APP = name
     app_dir()
+    fs = app_build_txt()["fs"]
+    if fs:
+        set_fs(fs[-1])
 
 
 def set_fs(khz):
@@ -479,12 +485,13 @@ def main():
     ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string X.Y")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK, else tools/sdk)")
     ap.add_argument("--app", default=APP, help=f"firmware/apps/APP to build (default: {APP})")
-    ap.add_argument("--fs", choices=("44", "48"), default="48" if FS48 else "44",
-                    help="codec rate: 48 = 48 kHz (default), 44 = the 44.1 kHz family")
+    ap.add_argument("--fs", choices=("44", "48"),
+                    help="codec rate: 48 = 48 kHz, 44 = the 44.1 kHz family (default: the app's build.txt `fs`, else 48)")
     ap.add_argument("--name", help="package file name without .fwsc (default: the app name, -44k with --fs 44)")
     a = ap.parse_args()
     set_app(a.app)
-    set_fs(a.fs)
+    if a.fs:
+        set_fs(a.fs)
     name = f"{a.name or build_tag()}.fwsc"
     if a.release:                   # one digit each: the identity has room for two
         m = re.fullmatch(r"(\d)\.(\d)(-[A-Za-z0-9]+)?", a.release)

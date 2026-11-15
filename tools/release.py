@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 npi3pak
-"""Build the FM1_AudioBase release folder: the package, its checksum and every licence it needs.
+# Modified for Beiwagen, 2026: the beiwagen app, at its build.txt rate
+"""Build the Beiwagen release folder: the package, its checksum and every licence it needs.
 
   tools/release.py X.Y            -> build/release-X.Y/
-      audiobase-X.Y.fwsc          the package, 48 kHz (identity FM-1_9XY, version X.Y on the splash)
+      beiwagen-X.Y.fwsc           the package, 44.1 kHz (identity FM-1_9XY, version X.Y on the splash)
       SHA256SUMS                  its SHA-256
       LICENSE LICENSING.md LICENSES/   GPL-3.0 and the third-party licences (the package holds Apache-2.0 SDK files)
 
@@ -19,7 +20,8 @@ import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1]
-VARIANTS = [("48", "")]
+APP = "beiwagen"
+VARIANTS = [""]                 # file name suffixes; the rate is the app's (build.txt `fs`)
 
 
 def main():
@@ -32,9 +34,9 @@ def main():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     names = []
-    for fs, suffix in VARIANTS:
-        name = f"audiobase-{version}{suffix}"
-        subprocess.run([sys.executable, str(SRC / "tools" / "build.py"), "--app", "audiobase", "--fs", fs,
+    for suffix in VARIANTS:
+        name = f"{APP}-{version}{suffix}"
+        subprocess.run([sys.executable, str(SRC / "tools" / "build.py"), "--app", APP,
                         "--release", version, "--name", name], check=True, cwd=SRC, env=env)
         shutil.copy(SRC / "build" / f"{name}.fwsc", out / f"{name}.fwsc")
         names.append(f"{name}.fwsc")

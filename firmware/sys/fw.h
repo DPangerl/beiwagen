@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only */
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): fw_usb_diag_t */
 #ifndef FW_H
 #define FW_H
 #include <stdint.h>
@@ -50,6 +51,19 @@ typedef struct {
     uint32_t audio_late;
     uint32_t usb_up;
 } fw_stats_t;
+
+/* USB playback diagnostics (usb_diag): the stream's counters and the host's last control requests, newest first */
+#define FW_USB_LOG 8u
+typedef struct {
+    uint8_t type, req;
+    uint16_t value, index;
+    uint32_t ms;
+} fw_usb_req_t;
+
+typedef struct {
+    uint32_t rate, ch, bytes, alt, pkts, starts, drops, ovr, dry, skips, resets, setups, rate_sets, nreq;
+    fw_usb_req_t req[FW_USB_LOG];
+} fw_usb_diag_t;
 
 static volatile uint32_t fm1_ms;
 

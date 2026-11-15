@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 npi3pak */
+ * Copyright (C) 2026 npi3pak
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): usb_diag, usb_play_select, usb_play_peaks stubs */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,16 @@ static void usb_play_enable(int on) { (void)on; }
 static int usb_play_state(void) { return host_usb_hz ? 2 : 0; }
 static int usb_play_begin(void) { return host_usb_hz != 0; }
 static int usb_rec_state(void) { return host_usb_rec; }
+static void usb_play_select(uint32_t pair) { (void)pair; }
+static uint32_t usb_play_peaks(uint16_t *pk) { pk[0] = pk[1] = host_usb_hz ? 16384u : 0u; return 2; }
+
+static void usb_diag(fw_usb_diag_t *d)
+{
+    memset(d, 0, sizeof *d);
+    d->rate = FW_FS48 ? 48000u : 44100u;
+    d->ch = 2;
+    d->alt = host_usb_hz != 0;
+}
 
 static int usb_play_read(int16_t *d, uint32_t n)
 {

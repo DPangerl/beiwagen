@@ -2,7 +2,8 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
  * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
  * Modified for MOOD_FM1, 2026: FW_UBOOT_LABELS, FW_USB_PLAY
- * Modified for FM1_AudioBase, 2026: the USB audio input's packets nested in the render (FELUCCA_UAC) */
+ * Modified for FM1_AudioBase, 2026: the USB audio input's packets nested in the render (FELUCCA_UAC)
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): the USB playback endpoint read every tick (FW_USB_PLAY) */
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[];
 #if FM1_CPU1_USED
@@ -38,12 +39,13 @@ void fm1_timer5_irq(void)
     if (FW_UART && sub % 5u == 2u)
         owed |= 2u;
     sub = sub + 1u == 10u ? 0u : sub + 1u;
+#if FW_USB_PLAY
+    /* every tick: a large packet (10 channels: 0.6 ms on the wire) leaves less than the 0.5 ms between USB polls
+       before the next one overruns it */
+    usb_play_nested();
+#endif
     if (fw_in_audio) {
         /* the USB audio streams move a packet a ms: not left to the render's end */
-#if FW_USB_PLAY
-        if (usb_due)
-            usb_play_nested();
-#endif
 #if FELUCCA_UAC
         if (usb_due)
             uac_service();
