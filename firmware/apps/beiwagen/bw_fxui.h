@@ -24,26 +24,27 @@ static void fx_fmt(char* b, int32_t v, const ui_param_t* p)
 
 static void fx_apply(int32_t v, const ui_param_t* p) { bw_fx_set(p->tag / BW_FX_PARAMS, p->tag % BW_FX_PARAMS, (int)v); }
 
-/* the chain, each effect lit when on, the page's underlined; then the output's level */
-static void fx_body(uint32_t ms, int full)
+/* the header's corner: the chain, a square per effect, lit when on (amber: all bypassed), the page's underlined. Drawn
+   with the page, then again only when an effect is switched */
+static void fx_corner(uint32_t ms, int full)
 {
-    static const char* const SHORT[FX_N] = { "DIST", "FILT", "CHOR", "DLY", "VERB" };
-    const ui_page_t* pg = ui_cur;
+    static uint32_t shown = 0xFFFFFFFFu;
+    uint32_t state = fx_bypass ? 1u << FX_N : 0u;
     int32_t i;
     (void)ms;
-    (void)full;
-    cv_begin(240, UI_BODY_H, C_BLACK);
+    for (i = 0; i < FX_N; i++)
+        state |= (uint32_t)(bw_fx_enabled((int)i) != 0) << i;
+    if (!full && state == shown)
+        return;
+    cv_begin(5 * 16, UI_HEAD_H, C_BG);
     for (i = 0; i < FX_N; i++) {
-        const int32_t x = 4 + 47 * i;
-        const int on = bw_fx_enabled((int)i) && !fx_bypass;
-        cv_rect(x, 4, 44, 26, on ? C_ACCENT : RGB(24, 24, 30));
-        cv_text(x + (44 - text_w(&FONT_S, SHORT[i])) / 2, 9, &FONT_S, SHORT[i], on ? C_WHITE : C_GRAY);
-        if (pg == &fx_page[i])
-            cv_rect(x, 33, 44, 3, C_HI);
+        const uint16_t on = fx_bypass ? C_WARN : C_TEXT;
+        cv_rect(2 + 16 * i, 4, 12, 12, bw_fx_enabled((int)i) ? on : C_TILE_HI);
+        if (ui_cur == &fx_page[i])
+            cv_rect(2 + 16 * i, 18, 12, 2, C_TEXT);
     }
-    cv_text(8, 42, &FONT_S, fx_bypass ? "BYPASS" : "OUT", fx_bypass ? RGB(250, 200, 40) : C_DIM);
-    ui_meter(70, 46, 162, 8, out_meter[0] > out_meter[1] ? out_meter[0] : out_meter[1], 1);
-    cv_blit(0, UI_BODY_Y);
+    cv_blit(240 - 5 * 16, 0);
+    shown = state;
 }
 
 static void fx_ui_init(void)
@@ -52,7 +53,7 @@ static void fx_ui_init(void)
     bw_fx_init();
     for (fx = 0; fx < FX_N && fx < bw_fx_count(); fx++) {
         fx_page[fx].title = bw_fx_name(fx);
-        fx_page[fx].body = fx_body;
+        fx_page[fx].corner = fx_corner;
         for (p = 0; p < BW_FX_PARAMS; p++) {
             ui_param_t* q = &fx_param[fx][p];
             const int steps = bw_fx_steps(fx, p);

@@ -1,5 +1,5 @@
 # the OP-1 plays a 1 kHz sine at -6 dBFS on the source pair and records the FM-1: MASTER full, half, off; then the
-# pages: HOME overview (the knobs turned), USB, SCOPE (SELECT), the FX section (GLO), the keys as MIDI, back HOME
+# pages: HOME tracks, setup (knobs turned: lit, then dim), USB, scope (SELECT), the FX section (GLO), the keys, HOME
 frames 20
 usbtone 1000 -6
 usbrec 2
@@ -11,11 +11,17 @@ screen build/host/out/beiwagen_half.ppm
 master 0
 frames 40
 master 1023
-knob K2 1
-knob K3 2
 knob ALGO 1
 frames 10
-screen build/host/out/beiwagen_knobs.ppm
+screen build/host/out/beiwagen_tracks.ppm
+knob SELECT 1
+frames 2
+knob K2 1
+knob K3 2
+frames 10
+screen build/host/out/beiwagen_setup.ppm
+frames 100
+screen build/host/out/beiwagen_setup_dim.ppm
 knob SELECT 1
 frames 60
 screen build/host/out/beiwagen_usb.ppm

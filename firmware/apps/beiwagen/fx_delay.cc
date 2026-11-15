@@ -93,7 +93,7 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect DELAY = {
-    "DELAY", {"TIME", "FEEDBACK", "TONE", "MIX"}, {926, 421, 674, 300}, {0, 0, 0, 0}, reset, apply, process, format,
+    "Delay", {"Time", "Feedback", "Tone", "Mix"}, {926, 421, 674, 300}, {0, 0, 0, 0}, reset, apply, process, format,
 };
 
 } // namespace bwfx

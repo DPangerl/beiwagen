@@ -11,7 +11,7 @@ namespace bwfx {
 namespace {
 
 enum { CLIP, FOLD, CRUSH };
-const char *const MODES[] = {"CLIP", "FOLD", "CRUSH"};
+const char *const MODES[] = {"Clip", "Fold", "Crush"};
 
 struct State {
     int mode;
@@ -127,7 +127,7 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect DISTORTION = {
-    "DISTORTION", {"MODE", "DRIVE", "TONE", "MIX"}, {0, 400, 1000, 1000}, {3, 0, 0, 0}, reset, apply, process, format,
+    "Distortion", {"Mode", "Drive", "Tone", "Mix"}, {0, 400, 1000, 1000}, {3, 0, 0, 0}, reset, apply, process, format,
 };
 
 } // namespace bwfx

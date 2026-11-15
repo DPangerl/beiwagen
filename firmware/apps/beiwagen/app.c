@@ -38,21 +38,24 @@ void bw_scope_read(int16_t* dst, int n)
         dst[i] = bw_scope[(w - (uint32_t)n + (uint32_t)i) & (BW_SCOPE - 1u)];
 }
 
-/* ---- sections still to be built: a page that says so */
-static void planned_body(uint32_t ms, int full)
+/* ---- sections still to be built: a tile that says so */
+static void planned_tiles(uint32_t ms, int full)
 {
+    uint32_t i;
     (void)ms;
     if (!full)
         return;
-    cv_begin(240, UI_BODY_H, C_BLACK);
-    cv_text(8, 26, &FONT_S, "NOT BUILT YET", C_DIM);
-    cv_blit(0, UI_BODY_Y);
+    cv_begin(UI_TILE_W, UI_TILE_H, C_TILE);
+    ui_text(8, 8, &FONT_M, "Not built yet", C_SUB, C_TILE);
+    cv_blit(0, UI_GRID_Y);
+    for (i = 1; i < 4u; i++)
+        lcd_fill(ui_tile_x(i), ui_tile_y(i), UI_TILE_W, UI_TILE_H, C_BG);
 }
 
-static const ui_page_t PG_SEQ = { "PATTERN", { 0 }, planned_body, 0 };
-static const ui_page_t PG_ARP = { "ARP", { 0 }, planned_body, 0 };
-static const ui_page_t PG_LFO = { "LFO", { 0 }, planned_body, 0 };
-static const ui_page_t PG_ENV = { "FOLLOWER", { 0 }, planned_body, 0 };
+static const ui_page_t PG_SEQ = { "Pattern", { 0 }, planned_tiles, 0, 0 };
+static const ui_page_t PG_ARP = { "Arpeggiator", { 0 }, planned_tiles, 0, 0 };
+static const ui_page_t PG_LFO = { "LFO", { 0 }, planned_tiles, 0, 0 };
+static const ui_page_t PG_ENV = { "Follower", { 0 }, planned_tiles, 0, 0 };
 static const ui_page_t* const SEQ_PAGES[] = { &PG_SEQ };
 static const ui_page_t* const ARP_PAGES[] = { &PG_ARP };
 static const ui_page_t* const LFO_PAGES[] = { &PG_LFO };
@@ -72,7 +75,8 @@ static const ui_section_t SECTIONS[] = {
 static uint32_t sec, sec_page[SECTION_COUNT];
 static int full_draw = 1;
 static int32_t shown[4];
-static uint32_t body_ms;
+static uint32_t lit_until[4];               /* a knob's tile is lit until then (ms), 0: dark */
+static uint32_t tiles_ms;
 
 /* MASTER (0..1023) as a gain, Q15: squared, so the knob's travel is near even in dB; the bottom is silence */
 static int32_t master_gain(uint32_t m)
@@ -101,31 +105,84 @@ static void nav(const fw_input_t* in)
         fw_led_button(SECTIONS[i].button, i == sec);
 }
 
+/* the footer: the source on the left, the status on the right; drawn when something in it changed */
+static void footer(uint32_t ms, int full)
+{
+    static uint32_t shown_key = 0xFFFFFFFFu, cpu_ms;
+    static int32_t cpu;
+    const int play = usb_play_state() == 2;
+    uint32_t key;
+    char b[24];
+    int32_t x;
+    if (ms - cpu_ms >= 500u) {
+        cpu = (int32_t)(fw_stats.cpu_q8 * 100u >> 8);
+        cpu_ms = ms;
+    }
+    key = (uint32_t)src_pair | (uint32_t)play << 3 | (uint32_t)fx_bypass << 4 | (uint32_t)cpu << 8;
+    if (!full && key == shown_key)
+        return;
+    shown_key = key;
+    cv_begin(240, UI_FOOT_H, C_BG);
+    fmt_track(b, src_pair, 0);
+    ui_text(4, 0, &FONT_M, b, play ? C_TEXT : C_SUB, C_BG);
+    str_cpy(b, "CPU ", sizeof b);
+    ui_cat_int(b, cpu, sizeof b);
+    ui_cat(b, "%", sizeof b);
+    x = 236 - text_w(&FONT_T, b);
+    ui_text(x, 3, &FONT_T, b, C_SUB, C_BG);
+    if (fx_bypass)
+        ui_text(x - 10 - text_w(&FONT_T, "Bypass"), 3, &FONT_T, "Bypass", C_WARN, C_BG);
+    else if (!play)
+        ui_text(x - 10 - text_w(&FONT_T, "No OP-1"), 3, &FONT_T, "No OP-1", C_WARN, C_BG);
+    cv_blit(0, UI_FOOT_Y);
+}
+
 static void draw(const ui_page_t* pg, const fw_input_t* in)
 {
     static const uint32_t KNOB[4] = { FW_KNOB_1, FW_KNOB_2, FW_KNOB_3, FW_KNOB_4 };
-    uint32_t r;
-    for (r = 0; r < 4u; r++)
-        ui_turn(pg->p[r], in->knob[KNOB[r]]);
+    const uint32_t ms = in->ms | 1u;
+    uint32_t i;
+    int lit_change[4] = { 0, 0, 0, 0 };
+    if (full_draw)                          /* a new page starts dark */
+        for (i = 0; i < 4u; i++)
+            lit_until[i] = 0;
+    for (i = 0; i < 4u; i++)
+        if (ui_turn(pg->p[i], in->knob[KNOB[i]])) {
+            lit_change[i] = !lit_until[i];
+            lit_until[i] = ms + UI_LIT_MS;
+        } else if (lit_until[i] && (int32_t)(ms - lit_until[i]) >= 0) {
+            lit_until[i] = 0;
+            lit_change[i] = 1;
+        }
     ui_cur = pg;
     if (pg->screen) {
         pg->screen(in->ms, full_draw);
         full_draw = 0;
         return;
     }
-    if (full_draw) {
-        lcd_fill(0, 0, 240, 240, C_BLACK);
+    if (full_draw) {                        /* every region over what was there, top to bottom: no clear, no flash */
         ui_header(&SECTIONS[sec], sec_page[sec]);
+        if (pg->corner)
+            pg->corner(in->ms, 1);
+        ui_gaps();
+    } else if (pg->corner) {
+        pg->corner(in->ms, 0);
     }
-    for (r = 0; r < 4u; r++)                /* a row is drawn when its value moved, by a knob or elsewhere */
-        if (full_draw || (pg->p[r] && *pg->p[r]->val != shown[r])) {
-            ui_row(r, pg->p[r], pg->p[r] != 0);
-            shown[r] = pg->p[r] ? *pg->p[r]->val : 0;
+    if (pg->tiles) {
+        if (full_draw || in->ms - tiles_ms >= 33u) {
+            pg->tiles(in->ms, full_draw);
+            tiles_ms = in->ms;
         }
-    if (pg->body && (full_draw || in->ms - body_ms >= 66u)) {
-        pg->body(in->ms, full_draw);
-        body_ms = in->ms;
+    } else {
+        for (i = 0; i < 4u; i++) {          /* a tile: all of it with the page or when it lights / dims, else its value */
+            const ui_param_t* p = pg->p[i];
+            if (full_draw || lit_change[i] || (p && *p->val != shown[i])) {
+                ui_knob_tile(i, p, lit_until[i] != 0, full_draw || lit_change[i]);
+                shown[i] = p ? *p->val : 0;
+            }
+        }
     }
+    footer(in->ms, full_draw);
     full_draw = 0;
 }
 
@@ -142,7 +199,7 @@ static void app_frame(const fw_input_t* in)
     fw_midi_t m;
     bw_gain_target = master_gain(in->master);
     while (fw_midi_read(&m))   /* (drained: a full ring would hold the host's SysEx back too) */
-        midi_seen_ms = in->ms;
+        ;
     keys_frame(in);
     src_step(in->knob[FW_KNOB_ALGO]);
     if (in->pressed & FW_BIT(FW_BTN_FX)) {

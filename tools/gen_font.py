@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 # Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
+# Modified for Beiwagen, 2026 (Daniel Pangerl): Inter (T, M, V); tabular figures without libraqm
 """Render the bitmap fonts to a C header (assets/fonts/):
   S  labels / units / status   Latin-1 32..255 at 1x
   L  large values / titles     32..95 (digits, signs, capitals), the same glyphs at 2x
@@ -16,13 +17,16 @@ alpha 0..15.
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
 FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
 # (name, file, px, scale, pixel, first, last): pixel fonts are rendered without
 # anti-aliasing at their design size and enlarged by an integer factor
 SIZES = [("S", "ter-u16n.bdf", 16, 1, True, 32, 255),   # Latin-1 (Hügelton needs the umlaut)
-         ("L", "ter-u16n.bdf", 16, 2, True, 32, 95)]   # values / titles: digits, signs, capitals
+         ("L", "ter-u16n.bdf", 16, 2, True, 32, 95),   # values / titles: digits, signs, capitals
+         ("T", "Inter-Medium.ttf", 13, 1, False, 32, 126),        # Inter (OFL 1.1): status lines
+         ("M", "Inter-SemiBold.ttf", 17, 1, False, 32, 126),      # labels, titles
+         ("V", "InterDisplay-SemiBold.ttf", 36, 1, False, 32, 126)]   # values
 PAD = 2
 
 
@@ -101,7 +105,9 @@ def render(ttf, px, scale, pixel, first, last):
     if ttf.endswith(".bdf"):
         return render_bdf(FONTS / ttf, scale, first, last)
     font = ImageFont.truetype(str(FONTS / ttf), px)
-    feats = None if pixel else ["tnum"]
+    tnum = not pixel                                   # tabular figures: a value does not jitter as it changes
+    feats = ["tnum"] if tnum and features.check("raqm") else None
+    fig = max(font.getlength(d, features=feats) for d in "0123456789") if tnum and not feats else 0
     asc, desc = font.getmetrics()
     top = max(0, font.getbbox("A8|(", features=feats)[1] - 1)
     h = asc + desc - top
@@ -109,9 +115,13 @@ def render(ttf, px, scale, pixel, first, last):
     for c in range(first, last + 1):
         ch = chr(c)
         adv = int(round(font.getlength(ch, features=feats)))
+        x = PAD
+        if fig and ch.isdigit():                       # no libraqm: each figure centred in the widest one's width
+            x += (round(fig) - adv) / 2
+            adv = int(round(fig))
         bw = adv + 2 * PAD
         img = Image.new("L", (bw, asc + desc), 0)
-        ImageDraw.Draw(img).text((PAD, 0), ch, font=font, fill=255, features=feats)
+        ImageDraw.Draw(img).text((x, 0), ch, font=font, fill=255, features=feats)
         img = img.crop((0, top, bw, top + h))
         px_ = [(15 if v >= 128 else 0) if pixel else min(15, (v + 8) // 17) for v in img.tobytes()]
         glyphs.append((adv * scale, bw * scale, upscale(px_, bw, h, scale)))

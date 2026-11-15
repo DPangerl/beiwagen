@@ -23,7 +23,7 @@ const int SUB = 8;                                   /* samples a coefficient up
 const float GLIDE = (float)SUB / (0.02f * FW_FS_HZ); /* a step every SUB samples: ~20 ms */
 
 enum { LP, BP, HP, NOTCH };
-const char *const MODES[] = {"LP 12", "LP 24", "BP 12", "BP 24", "HP 12", "HP 24", "NOTCH 12", "NOTCH 24"};
+const char *const MODES[] = {"LP 12", "LP 24", "BP 12", "BP 24", "HP 12", "HP 24", "Notch 12", "Notch 24"};
 
 struct State {
     int mode, steep;
@@ -147,7 +147,7 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect FILTER = {
-    "FILTER", {"CUTOFF", "RESO", "DRIVE", "MODE"}, {593, 200, 0, 0}, {0, 0, 0, 8}, reset, apply, process, format,
+    "Filter", {"Cutoff", "Reso", "Drive", "Mode"}, {593, 200, 0, 0}, {0, 0, 0, 8}, reset, apply, process, format,
 };
 
 } // namespace bwfx

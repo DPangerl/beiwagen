@@ -259,7 +259,7 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect REVERB = {
-    "REVERB", {"SIZE", "DECAY", "DAMPING", "MIX"}, {500, 436, 400, 300}, {0, 0, 0, 0}, reset, apply, process, format,
+    "Reverb", {"Size", "Decay", "Damping", "Mix"}, {500, 436, 400, 300}, {0, 0, 0, 0}, reset, apply, process, format,
 };
 
 } // namespace bwfx

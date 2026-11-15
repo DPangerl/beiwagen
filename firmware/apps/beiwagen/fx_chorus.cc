@@ -15,7 +15,7 @@ namespace bwfx {
 namespace {
 
 enum { CHORUS_MODE, FLANGER, PHASER };
-const char *const MODES[] = {"CHORUS", "FLANGER", "PHASER"};
+const char *const MODES[] = {"Chorus", "Flanger", "Phaser"};
 const float FEEDBACK[] = {0.0f, 0.5f, 0.5f};
 
 const int SIZE = FW_FS / 20 + 2; /* 50 ms */
@@ -181,7 +181,7 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect CHORUS = {
-    "CHORUS", {"MODE", "RATE", "DEPTH", "MIX"}, {0, 523, 500, 500}, {3, 0, 0, 0}, reset, apply, process, format,
+    "Chorus", {"Mode", "Rate", "Depth", "Mix"}, {0, 523, 500, 500}, {3, 0, 0, 0}, reset, apply, process, format,
 };
 
 } // namespace bwfx

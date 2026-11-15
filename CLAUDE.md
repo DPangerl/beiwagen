@@ -15,6 +15,13 @@ untested features (effects, sequencer) as working.
 
 - Beiwagen app layout: `app.c` (sections, audio), `bw_ui.h` (page kit: header, body strip, 4 knob rows), `bw_home.h`
   (HOME: overview, USB diagnostics, scope), `bw_keys.h` (keys → USB-MIDI); unity-included headers, static functions.
+- UI: speed and readability above looks (Daniel: very high UX demand). Flat drawn UI, no bitmaps/renders; redraw only
+  what changed; high contrast, large values.
+- Direction (2026-11-15): a mixdown tool + MIDI/sequencer companion. All 4 OP-1 tracks come in (USB mode 8), each
+  with its own inserts (filter, distortion) and sends to a shared delay/reverb, mixed to the one stereo return,
+  typically tracks 1-3 bounced onto 4. The track the return lands on (the OP-1's selected one) must be muted in the
+  mix; plan: detect it by finding the return in the incoming pairs. Presets and patterns stored per key
+  (hold SAVE + key: store, hold SEL + key: recall); flash save stalls audio briefly.
 - Product plan (control map): GLO through-effects, FX bypass, SEQ sequencer, ARP arpeggiator, PLAY transport, HOME
   overview + setup, LFO/ENV modulation routed to the effect chain (later the synth), SELECT pages, KNOB1-4 page
   params, ALGORITHM source (OP-1 pair), PRESETS presets/patterns, MASTER level. SEL/EDIT/SAVE/REC unassigned.
