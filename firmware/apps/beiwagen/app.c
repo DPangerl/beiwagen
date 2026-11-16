@@ -5,7 +5,8 @@
  * out; build.txt).
  * From FM1_AudioBase's app (stevexfer, GPL-3.0-only). Modified for Beiwagen, 2026 (Daniel Pangerl): pages and
  * sections (bw_ui.h), HOME (bw_home.h), the keys as MIDI (bw_keys.h), the 4-track mixdown (bw_mixui.h), the
- * sequencer and arpeggiator (bw_sequi.h), presets and patterns on the keys (bw_store.h) */
+ * sequencer and arpeggiator (bw_sequi.h), presets and patterns on the keys (bw_store.h), the keys' settings kept,
+ * the backlight off on buttons without a function, REC's meaning in the footer */
 #include "bw_fw.h"
 #include "avis.h"
 
@@ -61,34 +62,14 @@ static const bw_store_prov_t PROV_PATTERN = { SEQ_BLOB, 1, pattern_get, pattern_
 BW_STORE_FITS(BW_MIX_BLOB);
 BW_STORE_FITS(SEQ_BLOB);
 
-/* ---- sections still to be built: a tile that says so */
-static void planned_tiles(uint32_t ms, int full)
-{
-    uint32_t i;
-    (void)ms;
-    if (!full)
-        return;
-    cv_begin(UI_TILE_W, UI_TILE_H, C_TILE);
-    ui_text(8, 8, &FONT_M, "Not built yet", C_SUB, C_TILE);
-    cv_blit(0, UI_GRID_Y);
-    for (i = 1; i < 4u; i++)
-        lcd_fill(ui_tile_x(i), ui_tile_y(i), UI_TILE_W, UI_TILE_H, C_BG);
-}
-
-static const ui_page_t PG_LFO = { "LFO", { 0 }, planned_tiles, 0, 0 };
-static const ui_page_t PG_ENV = { "Follower", { 0 }, planned_tiles, 0, 0 };
-static const ui_page_t* const LFO_PAGES[] = { &PG_LFO };
-static const ui_page_t* const ENV_PAGES[] = { &PG_ENV };
-
 static const ui_section_t SECTIONS[] = {
     { "HOME", FW_BTN_HOME, HOME_PAGES, FW_NELEM(HOME_PAGES) },
     { "MIX", FW_BTN_GLO, MIX_PAGES, FW_NELEM(MIX_PAGES) },
     { "SEQ", FW_BTN_SEQ, SEQ_PAGES, FW_NELEM(SEQ_PAGES) },
     { "ARP", FW_BTN_ARP, ARP_PAGES, FW_NELEM(ARP_PAGES) },
-    { "LFO", FW_BTN_LFO, LFO_PAGES, FW_NELEM(LFO_PAGES) },
-    { "ENV", FW_BTN_ENV, ENV_PAGES, FW_NELEM(ENV_PAGES) },
 };
 #define SECTION_COUNT FW_NELEM(SECTIONS)
+#define LIGHTS_UNUSED (FW_BIT(FW_BTN_FX) | FW_BIT(FW_BTN_LFO) | FW_BIT(FW_BTN_ENV))   /* no function yet: unlit */
 
 /* the main loop's */
 static uint32_t sec, sec_page[SECTION_COUNT];
@@ -96,6 +77,36 @@ static int full_draw = 1;
 static int32_t shown[4];
 static uint32_t lit_until[4];               /* a knob's tile is lit until then (ms), 0: dark */
 static uint32_t tiles_ms;
+
+/* ---- the keys' MIDI channel and velocity (HOME's Keys page), in the preset bank's ext: saved once the page is left,
+   not while the pattern plays (a save stalls the clock) */
+static uint8_t keys_set_saved[2];
+
+static void keys_set_load(void)
+{
+    uint8_t s[2];
+    bw_store_ext_get(BW_BANK_PRESET, s, sizeof s);
+    if (s[0] >= 1u && s[0] <= 16u && s[1] >= 1u && s[1] <= 127u) {
+        key_ch = s[0];
+        key_vel = s[1];
+    }
+    keys_set_saved[0] = (uint8_t)key_ch;
+    keys_set_saved[1] = (uint8_t)key_vel;
+}
+
+static void keys_set_frame(const ui_page_t* pg, uint32_t ms)
+{
+    const uint8_t s[2] = { (uint8_t)key_ch, (uint8_t)key_vel };
+    int r;
+    if (pg == &PG_SETUP || !memcmp(s, keys_set_saved, sizeof s))
+        return;
+    r = bw_store_ext_save(BW_BANK_PRESET, s, sizeof s);
+    if (r == BW_ST_BUSY)
+        return;                             /* again once the transport stops */
+    if (r != BW_ST_OK)
+        bw_store_say("", "", 0, r, ms);
+    memcpy(keys_set_saved, s, sizeof s);    /* (a failed save is not tried again every frame) */
+}
 
 /* MASTER (0..1023) as a gain, Q15: squared, so the knob's travel is near even in dB; the bottom is silence */
 static int32_t master_gain(uint32_t m)
@@ -122,6 +133,7 @@ static void nav(const fw_input_t* in)
     }
     for (i = 0; i < SECTION_COUNT; i++)
         fw_led_button(SECTIONS[i].button, i == sec);
+    fw_lights_off(LIGHTS_UNUSED | (SECTIONS[sec].button == FW_BTN_SEQ ? 0u : FW_BIT(FW_BTN_EDIT)));
 }
 
 /* the mixer's return track (the one the OP-1 records the mix onto), -1 none */
@@ -134,7 +146,7 @@ static int32_t return_track(void)
     return -1;
 }
 
-/* the footer: where the mix goes on the left, the status on the right (a toast over it while one shows); drawn when
+/* the footer: what REC does here on the left (SEQ: record; else find the track the mix goes to), the status on the right (a toast over it while one shows); drawn when
    something in it changed */
 static void footer(uint32_t ms, int full)
 {
@@ -142,6 +154,7 @@ static void footer(uint32_t ms, int full)
     static int32_t cpu;
     const int play = usb_play_state() == 2;
     const int32_t ret = return_track();
+    const int in_seq = SECTIONS[sec].button == FW_BTN_SEQ;
     uint32_t key;
     char b[24];
     int32_t x;
@@ -151,17 +164,21 @@ static void footer(uint32_t ms, int full)
         cpu = (int32_t)(fw_stats.cpu_q8 * 100u >> 8);
         cpu_ms = ms;
     }
-    key = (uint32_t)(ret + 1) | (uint32_t)play << 3 | (uint32_t)cpu << 8;
+    key = (uint32_t)(ret + 1) | (uint32_t)play << 3 | (uint32_t)in_seq << 4 | (uint32_t)seq_rec << 5 | (uint32_t)cpu << 8;
     if (!full && key == shown_key)
         return;
     shown_key = key;
     cv_begin(240, UI_FOOT_H, C_BG);
-    str_cpy(b, "Mix to ", sizeof b);           /* REC finds the track it goes to */
-    if (ret < 0)
-        ui_cat(b, "?", sizeof b);
-    else
+    x = 4 + ui_chip(4, 3, "REC", in_seq && seq_rec ? RGB(255, 50, 40) : C_TEXT, C_BG) + 6;
+    if (in_seq) {
+        str_cpy(b, seq_rec ? "recording" : "record", sizeof b);
+    } else if (ret < 0) {
+        str_cpy(b, "find return", sizeof b);
+    } else {
+        str_cpy(b, "mix to ", sizeof b);
         ui_cat_int(b, ret + 1, sizeof b);
-    ui_text(4, 3, &FONT_T, b, ret < 0 ? C_SUB : C_TEXT, C_BG);
+    }
+    ui_text(x, 3, &FONT_T, b, C_TEXT, C_BG);
     str_cpy(b, "CPU ", sizeof b);
     ui_cat_int(b, cpu, sizeof b);
     ui_cat(b, "%", sizeof b);
@@ -232,6 +249,7 @@ static void app_init(void)
     bw_store_register(BW_BANK_PATTERN, &PROV_PATTERN);
     bw_store_busy = seq_busy;
     bw_store_session_load();
+    keys_set_load();
 }
 
 static void app_frame(const fw_input_t* in)
@@ -268,6 +286,7 @@ static void app_frame(const fw_input_t* in)
     seq_ui_frame();
     seq_leds(in->ms);
     nav(in);
+    keys_set_frame(SECTIONS[sec].pages[sec_page[sec]], in->ms);
     draw(SECTIONS[sec].pages[sec_page[sec]], in);
 }
 

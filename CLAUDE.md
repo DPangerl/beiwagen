@@ -3,7 +3,7 @@
 FM-1 firmware (M-VAVE FM-1, JieLi AC79, pi32v2) that makes the FM-1 a USB sidecar for the OP-1 Field: the OP-1 is the
 USB host, plays its tape tracks into the FM-1 (44.1 kHz only, USB mode 8 = tracks 1-4 stereo), the FM-1 effects one
 pair and sends it back as the OP-1's USB input. A fork of stevexfer's FM1_AudioBase (MOOD_FM1 → GATOR → Felucca,
-GPL-3.0-only). Upstream remote: `upstream` (stevexfer/FM1_AudioBase); ours: `origin` (DPangerl/fm1-audiobase-forks). Public
+GPL-3.0-only). Upstream remote: `upstream` (stevexfer/FM1_AudioBase); ours: `origin` (DPangerl/beiwagen). Public
 repo: everything in English. The app is `firmware/apps/beiwagen/` (default); `audiobase` and `demo` stay as upstream
 has them (easy merges).
 
@@ -13,10 +13,7 @@ wire); the OP-1 puts its USB input on the selected track, together with live pla
 track A, record onto track B. The keys play the OP-1 over USB-MIDI (OP-1 MIDI set to receive notes). Never claim
 untested features (effects, sequencer) as working.
 
-- Fernbedienung (`firmware/apps/fernbedienung/`): controller + USB audio interface for Steckfeld SF1 (iPad/iPhone). Protocol
-  `docs/fernbedienung/protocol.md` (CC0, picture layouts in pictures-a/b.md; Steckfeld implements it, never copies firmware
-  code). `fb_proto.h` shared constants, `fb_link.h` SysEx, `fb_screen.h` screen, `fb_pics_a.h` / `fb_pics_b.h` module pictures;
-  reuses `../beiwagen/bw_ui.h` and `bw_keys.h`. Each firmware version matches one Steckfeld version.
+- Fernbedienung (the Steckfeld SF1 controller) was split off into DPangerl/fernbedienung (`../../steckfeld/fernbedienung-fm1`).
 - Beiwagen app layout: `app.c` (sections, audio), `bw_ui.h` (page kit: header, body strip, 4 knob rows), `bw_home.h`
   (HOME: overview, USB diagnostics, scope), `bw_keys.h` (keys → USB-MIDI); unity-included headers, static functions.
 - UI: speed and readability above looks (Daniel: very high UX demand). Flat drawn UI, no bitmaps/renders; redraw only
@@ -62,7 +59,7 @@ untested features (effects, sequencer) as working.
   build/release-X.Y]` -> `build/site`; `node web/test_web.mjs PKG` is the protocol test.
 - Releases: by hand (BUILDING.md): `tools/release.py X.Y`, tag `vX.Y` (one digit each, identity FM-1_14923XY; the loader
   keeps `ota-FM-1_900`), `gh release create`. Actions are disabled on origin (they cost money): never re-enable or trigger them.
-  The Firmware Hub card is `fmhub.json`. Release notes in `docs/releases/X.Y.md`. `LICENSE`, `LICENSING.md`, `LICENSES/` travel with every package.
+  The Firmware Hub card is `fmhub.json` (picture `docs/card.png`, square, at most 300 KB). Release notes in `docs/releases/X.Y.md`, every change in `CHANGELOG.md`. `LICENSE`, `LICENSING.md`, `LICENSES/` travel with every package.
 - New files carry `SPDX-License-Identifier: GPL-3.0-only`; keep the existing copyright headers. A file changed for
   Beiwagen gets a line "Modified for Beiwagen, 2026 (Daniel Pangerl): what". A new third-party part goes into LICENSING.md,
   README's licence table, LICENSES/ and the installer's Licences section.

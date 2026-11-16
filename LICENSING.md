@@ -16,7 +16,7 @@ you must also give your recipients its complete corresponding source under the s
 Beiwagen is provided without any warranty (GPL-3.0 sections 15 and 16). Installing it is at your own risk.
 
 **Source code.** The complete corresponding source of every released package is the tag `vX.Y` of
-<https://github.com/DPangerl/fm1-audiobase-forks> (GitHub attaches its archives to the release); the web installer links
+<https://github.com/DPangerl/beiwagen> (GitHub attaches its archives to the release); the web installer links
 the source of the version it installs. `BUILDING.md` describes how to build it.
 
 **Modified files.** Files changed from what they were taken from keep their copyright lines and carry a line per

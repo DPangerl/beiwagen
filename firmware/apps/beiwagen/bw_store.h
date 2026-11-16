@@ -7,10 +7,11 @@
  *   bank 0 = presets (the mixer / effects state), bank 1 = patterns (the sequencer's).
  * What a bank holds comes from its provider: get / set / defaults of a blob of up to BW_STORE_BLOB_MAX bytes.
  *
- * A bank's image (the object's payload, 3764 of 3840 B):
+ * A bank's image (the object's payload, 3772 of 3840 B):
  *   header 68 B: magic "BWS1", layout version, slot stride, a used bit per slot, per slot the provider version and
  *                the blob size it was saved with
  *   28 slots of 132 B: the 27 keys, then the session (the state at the last explicit session save)
+ *   ext 8 B: the app's own settings, outside every slot (bw_store_ext_*); an image saved before ext reads it as zeros
  *
  * Versions. A provider's blob grows append-only within a version: a newer firmware reading an older slot starts from
  * its defaults and lays the stored bytes over them (new fields keep their defaults). A change that is not
@@ -37,6 +38,7 @@
 #define BW_STORE_SESSION FW_KEYS            /* the slot after the keys' */
 #define BW_STORE_SLOTS (FW_KEYS + 1u)
 #define BW_STORE_BLOB_MAX 132u              /* a provider's blob, at most */
+#define BW_STORE_EXT 8u
 
 enum { BW_BANK_PRESET, BW_BANK_PATTERN, BW_BANKS };
 
@@ -63,9 +65,13 @@ typedef struct {
 typedef struct {
     bw_store_hdr_t h;
     uint8_t slot[BW_STORE_SLOTS][BW_STORE_BLOB_MAX];
+    uint8_t ext[BW_STORE_EXT];
 } bw_store_img_t;
 
+#define BW_STORE_EXT_AT (sizeof(bw_store_img_t) - BW_STORE_EXT)   /* an image's size before ext */
+
 _Static_assert(sizeof(bw_store_hdr_t) == 68u, "the header's layout is the flash's");
+_Static_assert(BW_STORE_EXT_AT == 68u + BW_STORE_SLOTS * BW_STORE_BLOB_MAX, "ext right after the slots");
 _Static_assert(sizeof(bw_store_img_t) <= FW_STORE_MAX, "a bank fits a storage object");
 _Static_assert(BW_BANKS <= FW_STORE_SLOTS, "a storage object per bank");
 _Static_assert(BW_STORE_SLOTS <= 32u, "the used bits");
@@ -99,9 +105,11 @@ static void bw_store_init(void)
             bw_img_ro[b] = 1;
             continue;
         }
-        if (n != (int)sizeof bw_img[b] || h->magic != BW_STORE_MAGIC || h->layout != BW_STORE_LAYOUT ||
-            h->stride != BW_STORE_BLOB_MAX)
+        if ((n != (int)sizeof bw_img[b] && n != (int)BW_STORE_EXT_AT) || h->magic != BW_STORE_MAGIC ||
+            h->layout != BW_STORE_LAYOUT || h->stride != BW_STORE_BLOB_MAX)
             bw_store_blank(b);
+        else if (n == (int)BW_STORE_EXT_AT)
+            memset(bw_img[b].ext, 0, sizeof bw_img[b].ext);
     }
 }
 
@@ -180,6 +188,36 @@ static int bw_store_save(uint32_t bank, uint32_t slot)
     if (fw_store_save(bank, m, sizeof *m) != 0) {
         m->h = old_h;
         memcpy(m->slot[slot], old_s, sizeof old_s);
+        return BW_ST_FAIL;
+    }
+    return BW_ST_OK;
+}
+
+/* the app's own settings (n bytes, at most BW_STORE_EXT) in a bank's ext: zeros if never saved */
+static void bw_store_ext_get(uint32_t bank, void* dst, uint32_t n)
+{
+    memset(dst, 0, n);
+    if (bank < BW_BANKS && n <= BW_STORE_EXT && !bw_img_ro[bank])
+        memcpy(dst, bw_img[bank].ext, n);
+}
+
+/* onto the flash like a slot (one sector, refused while busy); on a failed write the image is as before */
+static int bw_store_ext_save(uint32_t bank, const void* src, uint32_t n)
+{
+    static uint8_t old[BW_STORE_EXT];
+    bw_store_img_t* m;
+    if (bank >= BW_BANKS || n > BW_STORE_EXT)
+        return BW_ST_FAIL;
+    m = &bw_img[bank];
+    if (bw_img_ro[bank])
+        return BW_ST_NEWER;
+    if (bw_store_busy && bw_store_busy())
+        return BW_ST_BUSY;
+    memcpy(old, m->ext, sizeof old);
+    memset(m->ext, 0, sizeof m->ext);
+    memcpy(m->ext, src, n);
+    if (fw_store_save(bank, m, sizeof *m) != 0) {
+        memcpy(m->ext, old, sizeof old);
         return BW_ST_FAIL;
     }
     return BW_ST_OK;
