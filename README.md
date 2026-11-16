@@ -1,10 +1,20 @@
-<h1 align="center">Beiwagen</h1>
+<h1 align="center">FM-1 AudioBase forks</h1>
 
 <p align="center">
-  The M-VAVE FM-1 as a USB sidecar for the teenage engineering OP-1 Field<br>
+  Free firmware apps for the M-VAVE FM-1, forked from FM1_AudioBase<br>
   <a href="BUILDING.md">Building</a> ·
   <a href="docs/DEVELOPING.md">Developing</a>
 </p>
+
+This repository holds several firmware apps for the M-VAVE FM-1, all built on stevexfer's
+[FM1_AudioBase](https://github.com/stevexfer/FM1_AudioBase). Each app is its own firmware; you install one at a time.
+
+| # | App | What it is | Folder |
+|---|---|---|---|
+| 1 | Beiwagen | USB sidecar for the teenage engineering OP-1 Field | [firmware/apps/beiwagen](firmware/apps/beiwagen) |
+| 2 | Fernbedienung | Controller and USB audio interface for Steckfeld SF1 on iPad and iPhone | [firmware/apps/fernbedienung](firmware/apps/fernbedienung) |
+
+## Beiwagen
 
 Beiwagen is free firmware for the M-VAVE FM-1 that works together with an OP-1 Field, and only with one. The FM-1
 plugs into the OP-1 with one USB cable; the OP-1, as the USB host, sends its tape tracks to the FM-1 and records what
@@ -35,9 +45,36 @@ The OP-1 puts its USB input on the selected track, together with what is played 
 a track that is not in it: select track 4 on the OP-1, press REC on the FM-1 once (it finds track 4 and mutes it in
 the mix), then play the tape and record.
 
+## Fernbedienung
+
+The FM-1 plugs into an iPad or iPhone running Steckfeld SF1 over USB-C.
+
+**Works now** (tested with Beiwagen's firmware on an iPad): the iPad lists the FM-1 as an audio output and plays
+Steckfeld through it; the FM-1's keys play Steckfeld over USB-MIDI.
+
+**Built, not yet tested on an FM-1:**
+
+- **Audio:** the iPad's stereo out plays on the FM-1, MASTER sets the volume.
+- **Keys:** notes, OCT−/+ for octaves, on the FM-1's MIDI channel with its velocity.
+- **Knobs:** KNOB1-4 send CC 20-23, SELECT CC 24 (pages), ALGORITHM CC 25, PRESETS CC 26 (the patch list), all
+  relative (1 = one step up, 127 = one step down, as the OP-1 sends them).
+- **Buttons:** REC and SAVE send CC 27 and 28 (127 pressed, 0 released). HOME, SCL, FX, LFO, ENV, SEQ, ARP and GLO
+  send CC 40-47 when tapped; held while SELECT turns, they send CC 50-57 instead. PLAY sends MIDI start and stop.
+- **EDIT:** the FM-1's own settings: MIDI channel, velocity and OPEN (Always: Steckfeld opens its programmer on a
+  module picked on the FM-1; Never: it stays closed while the FM-1 is connected). KNOB1-4 change them; EDIT again
+  stores them on the FM-1 and tells Steckfeld. The theme (follow Steckfeld, light or dark) is in the system settings:
+  hold HOME, press EDIT.
+- **Display:** Steckfeld sends the selected module over SysEx: its name and pages, the four knobs' names, values and
+  positions, a picture of the module, the cables on the Route screen and the patch list. In Steckfeld's display
+  colours: blue by day, red in the dark. Until Steckfeld answers, the FM-1 says it is waiting and the controls still
+  work.
+
+The protocol is in [docs/fernbedienung/protocol.md](docs/fernbedienung/protocol.md). Steckfeld's side of it is not
+released yet.
+
 > [!WARNING]
-> **Installing custom firmware is at your own risk.** Beiwagen is unofficial firmware, provided as is, without any
-> warranty (GPL-3.0 sections 15 and 16). It is not made, endorsed or supported by M-VAVE or teenage engineering. A
+> **Installing custom firmware is at your own risk.** These apps are unofficial firmware, provided as is, without any
+> warranty (GPL-3.0 sections 15 and 16). They are not made, endorsed or supported by M-VAVE or teenage engineering. A
 > failed or interrupted install can leave the FM-1 unable to start until it is recovered with a USB tool. You can
 > return to the official firmware at any time.
 
@@ -48,7 +85,7 @@ a release is made. [docs/DEVELOPING.md](docs/DEVELOPING.md) describes the platfo
 
 ## Credits
 
-Beiwagen is a fork of [FM1_AudioBase](https://github.com/stevexfer/FM1_AudioBase) by stevexfer, itself a fork of
+These apps are forks of [FM1_AudioBase](https://github.com/stevexfer/FM1_AudioBase) by stevexfer, itself a fork of
 MOOD_FM1, the FM-1 port of MOOD, which was built on [GATOR](https://github.com/npi3pak/fm1-gator) by npi3pak. It
 stands on the work of:
 
@@ -69,7 +106,7 @@ stands on the work of:
 
 ## License
 
-Beiwagen is free software under the [GNU General Public License v3.0 only](LICENSE), provided without any
+These apps are free software under the [GNU General Public License v3.0 only](LICENSE), provided without any
 warranty. The parts it is built from keep their licences and copyright notices:
 
 | Part | Author | Licence | Text |
@@ -86,4 +123,4 @@ Every release and the web installer carry these licence texts next to the packag
 source is its tag in this repository. [LICENSING.md](LICENSING.md) has the details.
 
 "M-VAVE" and "FM-1" are trademarks of their respective owners; "teenage engineering" and "OP-1" are trademarks of
-teenage engineering. Beiwagen is not affiliated with, endorsed by or supported by them.
+teenage engineering. These apps are not affiliated with, endorsed by or supported by them.
