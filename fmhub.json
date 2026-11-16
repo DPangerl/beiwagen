@@ -1,6 +1,6 @@
 {
   "what": "A USB sidecar for the OP-1 Field: the OP-1 streams its four tape tracks to the FM-1, the FM-1 sends a chosen track back as the OP-1's USB input to record, and its keys play the OP-1 over USB-MIDI.",
-  "author": "Daniel Pangerl",
+  "author": "Kabelmaier",
   "kinds": ["other"],
   "image": "docs/card.png"
 }
