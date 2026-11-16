@@ -33,9 +33,11 @@ struct State {
 };
 State s;
 
+void *state(int i) { return i == 0 ? &s : 0; }
+
 float seconds(int v) { return expo(v, MIN_SECONDS, MAX_SECONDS); }
 
-void reset() {
+void reset(void *) {
     memset(line, 0, sizeof line);
     s.write = 0;
     s.delay = s.delay_t;
@@ -43,7 +45,7 @@ void reset() {
     s.high[0] = s.high[1] = s.low[0] = s.low[1] = 0.0f;
 }
 
-void apply(const int *v) {
+void apply(void *, const int *v) {
     s.delay_t = clampf(seconds(v[0]) * FS, 1.0f, (float)(SIZE - 2));
     s.feedback = lin(v[1], 0.0f, 0.95f);
     s.high_c = one_pole(clampf(expo(v[2], 500.0f, 20000.0f), 10.0f, 0.45f * FS));
@@ -51,7 +53,7 @@ void apply(const int *v) {
     s.mix_t = unit(v[3]);
 }
 
-void process(float *l, float *r, int n) {
+void process(void *, float *l, float *r, int n) {
     const float dm = (s.mix_t - s.mix) / (float)n;
     float mix = s.mix;
     float *io[2] = {l, r};
@@ -92,8 +94,14 @@ void format(int p, int v, char *out, int max) {
 
 } // namespace
 
+int16_t *delay_scratch(int *count) {
+    *count = (int)(sizeof line / sizeof line[0][0]);
+    return &line[0][0];
+}
+
 const Effect DELAY = {
-    "Delay", {"Time", "Feedback", "Tone", "Mix"}, {926, 421, 674, 300}, {0, 0, 0, 0}, reset, apply, process, format,
+    "Delay", {"Time", "Feedback", "Tone", "Mix"}, {926, 421, 674, 300}, {0, 0, 0, 0}, 1, state, reset, apply, process,
+    format,
 };
 
 } // namespace bwfx

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 npi3pak
- * Modified for Beiwagen, 2026 (Daniel Pangerl): usb_diag, usb_play_select, usb_play_peaks stubs */
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): usb_diag, usb_play_select, usb_play_peaks, usb_play_read_pairs stubs;
+ * the app's TIMER5 hook (APP_TICK, 10 kHz) and MIDI clock hook (APP_MIDI_RT), the MIDI out ring drained as the USB
+ * poll does */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +76,25 @@ static int usb_play_read(int16_t *d, uint32_t n)
     return 1;
 }
 
+#ifndef FW_USB_PLAY_CH
+#define FW_USB_PLAY_CH 2
+#endif
+/* every pair (pair k: the tone times (k + 2) / 2, at 1 / (k + 1) of its level) */
+static int usb_play_read_pairs(int16_t *d, uint32_t n)
+{
+    static uint32_t ph[FW_USB_PLAY_CH / 2];
+    uint32_t i, k;
+    if (!host_usb_hz)
+        return 0;
+    for (k = 0; k < FW_USB_PLAY_CH / 2u; k++)
+        for (i = 0; i < n; i++) {
+            const int16_t s = (int16_t)((host_usb_amp * (int32_t)FW_SINE[ph[k] >> 22] >> 15) / (int32_t)(k + 1u));
+            d[2u * n * k + 2u * i] = d[2u * n * k + 2u * i + 1u] = s;
+            ph[k] += (uint32_t)((uint64_t)host_usb_hz * (k + 2u) * 2147483648ull / FW_FS);
+        }
+    return 1;
+}
+
 #include "libc.c"
 #include "lcd.c"
 #include "gfx.c"
@@ -102,6 +123,13 @@ static void host_frames(uint32_t n)
 {
     fw_input_t in;
     while (n--) {
+#ifdef APP_TICK
+        uint32_t t;
+        for (t = 0; t < 150u; t++) {        /* TIMER5: 10 kHz; the host takes what it queued */
+            app_tick();
+            mo_r = mo_w;
+        }
+#endif
         fm1_ms += 15u;
         host_render_until(fm1_ms);
         fw_input_read(&in);
@@ -192,6 +220,10 @@ static void host_key(uint32_t k, int down)
 static void host_midi(uint32_t status, uint32_t d1, uint32_t d2)
 {
     const uint32_t cin = status >= 0xF0u ? 0xFu : status >> 4;
+#ifdef APP_MIDI_RT
+    if (status == 0xF8u || status == 0xFAu || status == 0xFBu || status == 0xFCu)
+        app_midi_rt(status);
+#endif
     if (mi_w - mi_r < MQ)
         midi_in_q[mi_w++ % MQ] = cin | status << 8 | d1 << 16 | d2 << 24;
 }

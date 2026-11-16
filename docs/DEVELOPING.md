@@ -122,7 +122,9 @@ with both streams, listed before MIDI (older macOS needs the audio streaming int
 
 - **Output** (`FW_USB_PLAY`, isochronous adaptive OUT): the computer plays 48 kHz 16-bit stereo; the platform
   resamples it to the codec's clock (cubic) and keeps the latency steady. In `app_audio`: `usb_play_begin()`, then
-  `usb_play_read(buf, frames)` (`buf`: `2 * frames` int16, L R …); 0 means silence (no stream, or not heard yet).
+  `usb_play_read(buf, frames)` (`buf`: `2 * frames` int16, L R …: the pair `usb_play_select` chose) or
+  `usb_play_read_pairs(buf, frames)` (every pair of `FW_USB_PLAY_CH`, pair k at `buf + 2 * frames * k`); 0 means
+  silence (no stream, or not heard yet).
   `usb_play_enable(1)` once in `app_init`; `usb_play_state()`: 0 no stream, 1 selected, 2 heard.
 - **Input** (`FELUCCA_UAC`, isochronous asynchronous IN): what `app_audio` returns, after the app's volume, the
   codec's samples bit for bit, at the codec's rate (packets of 48 frames, one more or less to follow the clock).

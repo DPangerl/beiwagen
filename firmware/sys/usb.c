@@ -5,7 +5,9 @@
  * Modified for FM1_AudioBase, 2026: FELUCCA_UAC at the codec's rate beside FW_USB_PLAY (duplex), stereo playback
  * Modified for Beiwagen, 2026 (Daniel Pangerl): playback at the codec's rate family (an OP-1 Field host: 44.1 kHz),
  * FW_USB_PLAY_CH channels (one pair heard, each channel's peak), SET_CUR on EP3, usb_diag (counters, the host's
- * last control requests) */
+ * last control requests); every pair resampled (the ring holds all FW_USB_PLAY_CH channels, usb_play_read_pairs;
+ * usb_play_read still gives the selected pair), the reader's points read from the ring; the app's MIDI clock hook
+ * (APP_MIDI_RT), midi_out_room, usb_midi_nested */
 /* USB full-speed device on USB0: a class-compliant USB-MIDI interface.
  * All SIE traffic happens in usb_poll(), called from the TIMER5 ISR at 2 kHz,
  * so INDEX is never shared and no USB IRQ is needed. MIDI in goes to a ring
@@ -24,7 +26,8 @@
  * computer plays into the FM-1, 16-bit stereo at 48 kHz on an isochronous adaptive OUT endpoint (EP3), after
  * FM1_FjordLead's FELUCCA_UAC_OUT (the endpoint's setup, the read nested in the render, a reader that follows the
  * host's clock by the ring's fill). Nothing is read until the app asks for it (usb_play_enable) and the host
- * streams; the app takes the audio, stereo, at the codec's rate (usb_play_begin, usb_play_read).
+ * streams; the app takes the audio at the codec's rate (usb_play_begin, then usb_play_read: the selected pair, or
+ * usb_play_read_pairs: all of them).
  * Both together are one audio device, input and output, under the product name (FW_USB_PRODUCT): interface 2
  * the playback, 3 the recording, listed before the MIDI interface in the audio control collection. */
 #include "../hal/fm1_usb.h"   /* registers; relative, so the loader and the host tests find it too */
@@ -120,6 +123,7 @@ static struct {
 #define FW_USB_PLAY_CH 2                                 /* channels the host plays (build.txt): one pair is heard */
 #endif
 #define PB_CH ((uint32_t)FW_USB_PLAY_CH)
+#define PB_PAIRS (PB_CH / 2u)
 #define PB_MAXP (PB_MAXF * 2u * PB_CH)
 _Static_assert(PB_CH >= 2u && PB_CH <= 10u && !(PB_CH & 1u), "FW_USB_PLAY_CH: 2, 4, ... 10");
 _Static_assert(PB_MAXP <= 1023u, "a full-speed isochronous packet");
@@ -129,7 +133,7 @@ _Static_assert(PB_MAXP <= 1023u, "a full-speed isochronous packet");
 #define PB_K 2                                           /* the step: PB_STEP0 + PB_K * (fill - PB_TARGET), Q16 */
 #define PB_STEP0 ((int32_t)(((uint64_t)PB_RATE * 65536u * FW_MCLK_DIV * 256u + FW_MCLK_HZ / 2u) / FW_MCLK_HZ))
 _Static_assert(PB_TARGET > FW_BLOCK + 2u * PB_MAXF && PB_HIGH + 3u * PB_MAXF < PB_N, "the ring holds a render and the packets around it");
-static uint32_t pb_ring[PB_N];                           /* frames: 16-bit L | R << 16 */
+static uint32_t pb_ring[PB_N * PB_PAIRS];               /* frames as sent: each pair 16-bit L | R << 16 */
 static uint8_t pbrx[PB_MAXP + 4] __attribute__((aligned(4)));   /* the EP3 OUT packet */
 static volatile uint32_t pb_w, pb_r;                     /* writer: TIMER5 (pb_w); reader: the audio ISR (pb_r) */
 static struct {
@@ -139,8 +143,7 @@ static struct {
     volatile uint8_t flush;      /* writer -> reader: start empty */
     uint8_t pend;                /* a packet waits on EP3 */
     uint8_t play;                /* the reader is primed */
-    int16_t yl[4], yr[4];        /* the reader's frames: it is between [1] and [2] */
-    uint32_t frac;               /* ... this far, Q16 */
+    uint32_t frac;               /* the reader is between the ring's frames pb_r - 3 and pb_r - 2, this far (Q16) */
     int32_t fill_q8;             /* the fill when a render starts, smoothed */
     int32_t step;                /* this render's step, Q16 ring frames per output frame */
     uint32_t starts, pkts, drops, ovr, dry, skips;   /* streams; packets; ring full; RXCSR1 overrun; dry; held up */
@@ -193,6 +196,12 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
         mo_w++;
     }
 }
+
+/* the out ring's free slots (no host: all, midi_out_event drops anyway) */
+static uint32_t midi_out_room(void) { return usb.config ? MQ - (mo_w - mo_r) : MQ; }
+#ifdef APP_MIDI_RT
+static void app_midi_rt(uint32_t status);           /* app.c: clock / transport, in TIMER5, the moment it is read */
+#endif
 
 /* ------------------------------------------------------- descriptors --- */
 /* interfaces: 0 audio control, 1 MIDI streaming, then the audio streams: 2 the playback (FW_USB_PLAY), then the
@@ -855,6 +864,9 @@ static void midi_in_event(uint32_t pkt)
 #endif
     }
     if (cin == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) {   /* clock, transport */
+#ifdef APP_MIDI_RT
+        app_midi_rt(st);
+#endif
         if (mi_w - mi_r < MQ) {
             midi_in_q[mi_w % MQ] = 0xFu | st << 8;
             RING_PUBLISH();
@@ -1196,7 +1208,8 @@ static int usb_rec_state(void) { return uac.alt && usb.config ? (uac.flowing ? 2
 #endif
 
 #if FW_USB_PLAY
-/* EP3 OUT: one packet (16-bit L, R, little endian) into the ring; dropped when the ring is full */
+/* EP3 OUT: one packet (16-bit channels, little endian) into the ring as it is; dropped when the ring is full (the
+ * reader's 4 points before pb_r stay) */
 static void usb_play_rx(void)
 {
     uint32_t csr, n, i, w = pb_w;
@@ -1227,13 +1240,10 @@ static void usb_play_rx(void)
             pb.peak[c] = (uint16_t)(pk > 65535u ? 65535u : pk);
         }
     }
-    if (PB_N - (w - pb_r) >= n) {
-        const uint32_t o = 4u * (pb.sel < PB_CH / 2u ? pb.sel : 0u);
-        for (i = 0; i < n; i++) {
-            const uint8_t *q = pbrx + 2u * PB_CH * i + o;
-            pb_ring[(w + i) & (PB_N - 1u)] = (uint32_t)q[0] | (uint32_t)q[1] << 8 | (uint32_t)q[2] << 16 |
-                                             (uint32_t)q[3] << 24;
-        }
+    if ((w - pb_r) + n + 4u <= PB_N) {
+        const uint32_t at = w & (PB_N - 1u), first = PB_N - at < n ? PB_N - at : n;
+        memcpy(pb_ring + at * PB_PAIRS, pbrx, first * 4u * PB_PAIRS);
+        memcpy(pb_ring, pbrx + first * 4u * PB_PAIRS, (n - first) * 4u * PB_PAIRS);
         RING_PUBLISH();
         pb_w = w + n;
     } else {
@@ -1258,7 +1268,7 @@ static void usb_play_nested(void)
 static void usb_play_enable(int on) { pb.want = (uint8_t)(on != 0); }   /* the main loop */
 static int usb_play_state(void) { return pb.alt ? (pb.on && pb.play ? 2 : 1) : 0; }   /* 0 no stream, 1 the host plays, 2 heard */
 
-static void usb_play_select(uint32_t pair) { pb.sel = (uint8_t)(pair < PB_CH / 2u ? pair : 0u); }   /* the main loop */
+static void usb_play_select(uint32_t pair) { pb.sel = (uint8_t)(pair < PB_PAIRS ? pair : 0u); }   /* the main loop: usb_play_read's pair */
 
 /* the main loop: each channel's peak (0..32768) since the last call into pk[0 .. PB_CH - 1] (2 ch: none); the count */
 static uint32_t usb_play_peaks(uint16_t *pk)
@@ -1299,14 +1309,8 @@ static void usb_diag(fw_usb_diag_t *d)                  /* the main loop */
 
 static void usb_play_prime(void)                        /* the reader: PB_TARGET frames behind the writer */
 {
-    uint32_t i, r = pb_w - PB_TARGET;
-    for (i = 0; i < 4u; i++) {
-        const uint32_t f = pb_ring[r++ & (PB_N - 1u)];
-        pb.yl[i] = (int16_t)f;
-        pb.yr[i] = (int16_t)(f >> 16);
-    }
     RING_PUBLISH();
-    pb_r = r;
+    pb_r = pb_w - PB_TARGET + 4u;                       /* its 4 points: the frames before pb_r */
     pb.frac = 0;
     pb.fill_q8 = (int32_t)(PB_TARGET << 8);
 }
@@ -1351,52 +1355,54 @@ static inline int16_t pb_cubic(int32_t y0, int32_t y1, int32_t y2, int32_t y3, i
     return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
 }
 
-/* audio ISR: the next n frames at the codec's rate into d (16-bit L, R interleaved). 0: the ring ran dry (the
- * host stopped, or its packets were lost); the reader waits for PB_TARGET frames again. */
-static int usb_play_read(int16_t *d, uint32_t n)
+/* audio ISR: the next n frames at the codec's rate of `count` pairs from `first`, pair k into d + 2 n k (16-bit L, R
+ * interleaved). 0: the ring ran dry (the host stopped, or its packets were lost); the reader waits for PB_TARGET
+ * frames again. Its 4 points are the ring's frames pb_r - 4 .. pb_r - 1 (the writer leaves them). */
+static int usb_play_pairs(int16_t *d, uint32_t n, uint32_t first, uint32_t count)
 {
-    uint32_t i, r = pb_r, frac = pb.frac;
+    uint32_t i, k, r = pb_r, frac = pb.frac;
     const uint32_t w = pb_w, step = (uint32_t)pb.step;
-    int32_t l0 = pb.yl[0], l1 = pb.yl[1], l2 = pb.yl[2], l3 = pb.yl[3];
-    int32_t r0 = pb.yr[0], r1 = pb.yr[1], r2 = pb.yr[2], r3 = pb.yr[3];
     if (!pb.play)
         return 0;
     for (i = 0; i < n; i++) {
         const int32_t t = (int32_t)(frac >> 5);         /* Q11 */
-        d[2u * i] = pb_cubic(l0, l1, l2, l3, t);
-        d[2u * i + 1u] = pb_cubic(r0, r1, r2, r3, t);
+        const uint32_t *f0 = pb_ring + ((r - 4u) & (PB_N - 1u)) * PB_PAIRS + first;
+        const uint32_t *f1 = pb_ring + ((r - 3u) & (PB_N - 1u)) * PB_PAIRS + first;
+        const uint32_t *f2 = pb_ring + ((r - 2u) & (PB_N - 1u)) * PB_PAIRS + first;
+        const uint32_t *f3 = pb_ring + ((r - 1u) & (PB_N - 1u)) * PB_PAIRS + first;
+        int16_t *o = d + 2u * i;
+        for (k = 0; k < count; k++, o += 2u * n) {
+            const uint32_t a = f0[k], b = f1[k], c = f2[k], e = f3[k];
+            o[0] = pb_cubic((int16_t)a, (int16_t)b, (int16_t)c, (int16_t)e, t);
+            o[1] = pb_cubic((int16_t)(a >> 16), (int16_t)(b >> 16), (int16_t)(c >> 16), (int16_t)(e >> 16), t);
+        }
         frac += step;
         if (frac >= 65536u) {                           /* (the step stays under 2) */
-            uint32_t f;
             frac -= 65536u;
             if (r == w) {
                 pb.dry++;
                 pb.play = 0;
                 return 0;
             }
-            f = pb_ring[r++ & (PB_N - 1u)];
-            l0 = l1;
-            l1 = l2;
-            l2 = l3;
-            l3 = (int16_t)f;
-            r0 = r1;
-            r1 = r2;
-            r2 = r3;
-            r3 = (int16_t)(f >> 16);
+            r++;
         }
     }
-    pb.yl[0] = (int16_t)l0;
-    pb.yl[1] = (int16_t)l1;
-    pb.yl[2] = (int16_t)l2;
-    pb.yl[3] = (int16_t)l3;
-    pb.yr[0] = (int16_t)r0;
-    pb.yr[1] = (int16_t)r1;
-    pb.yr[2] = (int16_t)r2;
-    pb.yr[3] = (int16_t)r3;
     pb.frac = frac;
     RING_PUBLISH();
     pb_r = r;
     return 1;
+}
+
+/* audio ISR: the selected pair, n frames into d (16-bit L, R interleaved); 0: none (usb_play_pairs) */
+static int usb_play_read(int16_t *d, uint32_t n)
+{
+    return usb_play_pairs(d, n, pb.sel < PB_PAIRS ? pb.sel : 0u, 1u);
+}
+
+/* audio ISR: every pair, n frames each, pair k at d + 2 n k (FW_USB_PLAY_CH * n int16); 0: none (usb_play_pairs) */
+static int usb_play_read_pairs(int16_t *d, uint32_t n)
+{
+    return usb_play_pairs(d, n, 0u, PB_PAIRS);
 }
 #endif
 
@@ -1503,6 +1509,15 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
             usb_play_rx();
     }
 #endif
+}
+
+/* the MIDI endpoint in and out, from TIMER5 while it nests into the render (usb_poll waits for the render's end) */
+static void usb_midi_nested(void)
+{
+    if (!usb.up || !usb.config)
+        return;
+    ep1_rx();
+    ep1_tx();
 }
 
 static void usb_start(void)                             /* boot, or main-loop retry while usb.up == 0 */

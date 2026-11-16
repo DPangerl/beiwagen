@@ -3,7 +3,8 @@
  * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
  * Modified for MOOD_FM1, 2026: FW_UBOOT_LABELS, FW_USB_PLAY
  * Modified for FM1_AudioBase, 2026: the USB audio input's packets nested in the render (FELUCCA_UAC)
- * Modified for Beiwagen, 2026 (Daniel Pangerl): the USB playback endpoint read every tick (FW_USB_PLAY) */
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): the USB playback endpoint read every tick (FW_USB_PLAY); the app's
+ * TIMER5 hook (APP_TICK: app_tick every tick, 10 kHz) and with it the MIDI endpoint served inside the render too */
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[];
 #if FM1_CPU1_USED
@@ -39,6 +40,9 @@ void fm1_timer5_irq(void)
     if (FW_UART && sub % 5u == 2u)
         owed |= 2u;
     sub = sub + 1u == 10u ? 0u : sub + 1u;
+#ifdef APP_TICK
+    app_tick();                             /* (what it queues for MIDI goes out with this tick's USB poll) */
+#endif
 #if FW_USB_PLAY
     /* every tick: a large packet (10 channels: 0.6 ms on the wire) leaves less than the 0.5 ms between USB polls
        before the next one overruns it */
@@ -49,6 +53,10 @@ void fm1_timer5_irq(void)
 #if FELUCCA_UAC
         if (usb_due)
             uac_service();
+#endif
+#ifdef APP_TICK
+        if (usb_due)                        /* the app's MIDI on time, not after the render */
+            usb_midi_nested();
 #endif
         (void)usb_due;
         fw_t5_nested_ticks += fm1_ticks() - t0;

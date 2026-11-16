@@ -26,6 +26,8 @@ struct State {
 };
 State s;
 
+void *state(int i) { return i == 0 ? &s : 0; }
+
 /* sin(x) for any x: reduced to -pi/2..pi/2, then its Taylor series to x^9 (within 1e-7) */
 inline float fast_sin(float x) {
     const float turns = x * (0.5f / PI);
@@ -51,7 +53,7 @@ inline float shape(float x, float gain, float trim, int mode) {
 /* rounds half away from zero, as roundf: |x| stays under 2^17 here */
 inline float round_q(float x) { return (float)(int)(x + (x < 0.0f ? -0.5f : 0.5f)); }
 
-void reset() {
+void reset(void *) {
     s.gain = s.gain_t;
     s.trim = s.trim_t;
     s.mix = s.mix_t;
@@ -60,7 +62,7 @@ void reset() {
     s.os.init();
 }
 
-void apply(const int *v) {
+void apply(void *, const int *v) {
     s.mode = choice(v[0], 3);
     const float drive = unit(v[1]);
     if (s.mode == FOLD) {
@@ -77,7 +79,7 @@ void apply(const int *v) {
     s.mix_t = unit(v[3]);
 }
 
-void process(float *l, float *r, int n) {
+void process(void *, float *l, float *r, int n) {
     const float inv = 1.0f / (float)n;
     const float dg = (s.gain_t - s.gain) * inv, dt = (s.trim_t - s.trim) * inv, dm = (s.mix_t - s.mix) * inv;
     float gain = s.gain, trim = s.trim, mix = s.mix;
@@ -127,7 +129,8 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect DISTORTION = {
-    "Distortion", {"Mode", "Drive", "Tone", "Mix"}, {0, 400, 1000, 1000}, {3, 0, 0, 0}, reset, apply, process, format,
+    "Distortion", {"Mode", "Drive", "Tone", "Mix"}, {0, 400, 1000, 1000}, {3, 0, 0, 0}, 1, state, reset, apply, process,
+    format,
 };
 
 } // namespace bwfx

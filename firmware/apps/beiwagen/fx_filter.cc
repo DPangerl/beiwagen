@@ -6,7 +6,8 @@
  * cleanly; at full resonance the loss is gone and the filter sings on its own. Drive overdrives the input too. At
  * 24 dB a second, plain Butterworth stage follows, so the resonance stays the first stage's.
  * For the interrupt: cutoff, resonance and drive glide (~20 ms) and the coefficients follow every 8 samples, not
- * every sample. No Morph mode: it needs a fifth knob. */
+ * every sample. No Morph mode: it needs a fifth knob. filter_oversample(.., 0) runs an instance at the sample rate
+ * instead (the mixer's economy inserts). */
 #include "fx_dsp.h"
 
 namespace bwfx {
@@ -33,12 +34,16 @@ struct State {
     float drive_gain, drive_trim, ceiling;
     float ic1[2], ic2[2], ic3[2], ic4[2];
     Oversampler2x os;
+    int single;                      /* at the sample rate, not twice it (filter_oversample) */
+    float rate;                      /* the rate the core runs at */
 };
-State s;
+State inst[FILTER_INSTANCES];
 
-void coefficients() {
-    const float hz = clampf(exp2f(s.log_cut), 10.0f, FS2 * 0.49f);
-    s.g = tanf(PI * hz / FS2);
+void *state(int i) { return i >= 0 && i < FILTER_INSTANCES ? &inst[i] : 0; }
+
+void coefficients(State &s) {
+    const float hz = clampf(exp2f(s.log_cut), 10.0f, s.rate * 0.49f);
+    s.g = tanf(PI * hz / s.rate);
     const float r = s.res;
     const float past = (r > SELF_OSCILLATION ? r - SELF_OSCILLATION : 0.0f) / (1.0f - SELF_OSCILLATION);
     s.k = 2.0f * (1.0f - r) - NEGATIVE_DAMPING * past;
@@ -56,7 +61,7 @@ void coefficients() {
 }
 
 /* the 24 dB mode's second stage, the same response as the first */
-inline float second(float in, int c) {
+inline float second(State &s, float in, int c) {
     const float v3 = in - s.ic4[c];
     const float v1 = s.b1 * s.ic3[c] + s.b2 * v3;
     const float v2 = s.ic4[c] + s.b2 * s.ic3[c] + s.b3 * v3;
@@ -70,7 +75,7 @@ inline float second(float in, int c) {
     }
 }
 
-inline float core(float in, int c) {
+inline float core(State &s, float in, int c) {
     const float x = s.drive > 0.0f ? saturate(in * s.drive_gain) * s.drive_trim : in;
     const float v3 = x - s.ic2[c];
     const float v1 = s.a1 * s.ic1[c] + s.a2 * v3;
@@ -87,19 +92,22 @@ inline float core(float in, int c) {
     case NOTCH: y = x - s.k * v1; break;
     default: y = v2 * s.low_gain; break;
     }
-    return s.steep ? second(y, c) : y;
+    return s.steep ? second(s, y, c) : y;
 }
 
-void reset() {
+void reset(void *st) {
+    State &s = *(State *)st;
+    s.rate = s.single ? FW_FS_HZ : FS2;
     s.log_cut = s.log_cut_t;
     s.res = s.res_t;
     s.drive = s.drive_t;
     for (int c = 0; c < 2; ++c) s.ic1[c] = s.ic2[c] = s.ic3[c] = s.ic4[c] = 0.0f;
     s.os.init();
-    coefficients();
+    coefficients(s);
 }
 
-void apply(const int *v) {
+void apply(void *st, const int *v) {
+    State &s = *(State *)st;
     /* log2 of 20 Hz .. 20 kHz, without logf: libm's holds a constant tools/build.py takes for a ROM address */
     s.log_cut_t = 4.3219281f + 9.9657843f * unit(v[0]);
     s.res_t = unit(v[1]);
@@ -111,7 +119,8 @@ void apply(const int *v) {
     s.mode = m >> 1;
 }
 
-void process(float *l, float *r, int n) {
+void process(void *st, float *l, float *r, int n) {
+    State &s = *(State *)st;
     float *io[2] = {l, r};
     for (int i = 0; i < n; ++i) {
         if (i % SUB == 0) {
@@ -119,13 +128,18 @@ void process(float *l, float *r, int n) {
             s.res += (s.res_t - s.res) * GLIDE;
             s.drive += (s.drive_t - s.drive) * GLIDE;
             if (fabsf(s.drive) < 1e-4f && s.drive_t == 0.0f) s.drive = 0.0f;
-            coefficients();
+            coefficients(s);
+        }
+        if (s.single) {
+            io[0][i] = core(s, io[0][i], 0);
+            io[1][i] = core(s, io[1][i], 1);
+            continue;
         }
         for (int c = 0; c < 2; ++c) {
             float x[2];
             s.os.up(io[c][i], c, x);
-            x[0] = core(x[0], c);
-            x[1] = core(x[1], c);
+            x[0] = core(s, x[0], c);
+            x[1] = core(s, x[1], c);
             io[c][i] = s.os.down(x, c);
         }
     }
@@ -146,8 +160,11 @@ void format(int p, int v, char *out, int max) {
 
 } // namespace
 
+void filter_oversample(void *st, int on) { ((State *)st)->single = !on; }
+
 const Effect FILTER = {
-    "Filter", {"Cutoff", "Reso", "Drive", "Mode"}, {593, 200, 0, 0}, {0, 0, 0, 8}, reset, apply, process, format,
+    "Filter", {"Cutoff", "Reso", "Drive", "Mode"}, {593, 200, 0, 0}, {0, 0, 0, 8}, FILTER_INSTANCES, state, reset, apply,
+    process, format,
 };
 
 } // namespace bwfx

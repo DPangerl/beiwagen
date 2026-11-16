@@ -13,14 +13,16 @@
  * cancel s too and ended worse than the fixed h. A changed loop (OP-1 level, delay) needs a new calibration. */
 #include "bw_aec.h"
 
+#include "bw_probe.h"
 #include "fw.h"
 
 namespace {
 
+using bwprobe::PROBE;
+
 const int TAPS = 32;                        /* the response per channel */
 const int PRE = 10;                         /* its taps before the peak (the resamplers' smear) */
 const int RING = 8192;                      /* reference history, frames; a power of 2 */
-const int PROBE = 2048;                     /* the probe, samples (46 ms) */
 const int REC = 6144;                       /* the recording after a burst's start, frames */
 const int LAG_MIN = (int)FW_BLOCK + PRE;    /* the response must lie wholly before the block */
 const int LAG_HI = REC - PROBE - 1;         /* lags searched: LAG_MIN .. LAG_HI-1 (93 ms) */
@@ -40,8 +42,6 @@ union Mem {
 };
 Mem mem FW_POOL;
 
-uint32_t probe_bits[PROBE / 32];
-int8_t probe_d2[PROBE + 2];  /* the probe's second difference, from index -1 */
 float probe_acf[TAPS];       /* the probe's autocorrelation */
 
 volatile int want, gen;      /* the main loop's request */
@@ -74,8 +74,8 @@ inline int16_t sat16(float v) {
 }
 inline int16_t clip16(int32_t v) { return (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v); }
 inline float absf(float v) { return v < 0.0f ? -v : v; }
-inline int probe_bit(int i) { return (int)(probe_bits[i >> 5] >> (i & 31)) & 1; }
-inline int probe_sign(int i) { return probe_bit(i) ? 1 : -1; }
+inline int probe_bit(int i) { return bwprobe::bit(i); }
+inline int probe_sign(int i) { return bwprobe::sign(i); }
 
 /* a square root by Newton from the float's bits, without libm */
 float sqrt_approx(float x) {
@@ -107,7 +107,7 @@ float ln_approx(float x) {
 int32_t corr_d2(int at) {
     int32_t acc = 0;
     const int16_t(*y)[2] = mem.rec + at - 1;
-    for (int i = 0; i < PROBE + 2; i++) acc += probe_d2[i] * ((int32_t)y[i][0] + y[i][1]);
+    for (int i = 0; i < PROBE + 2; i++) acc += bwprobe::d2[i] * ((int32_t)y[i][0] + y[i][1]);
     return acc;
 }
 
@@ -116,7 +116,7 @@ float corr_plain(int at, int c) {
     int32_t acc = 0;
     const int16_t(*y)[2] = mem.rec + at;
     for (int w = 0; w < PROBE / 32; w++) {
-        const uint32_t bits = probe_bits[w];
+        const uint32_t bits = bwprobe::bits[w];
         for (int b = 0; b < 32; b++, y++) acc += (bits >> b & 1u) ? y[0][c] : -y[0][c];
     }
     return (float)acc;
@@ -278,23 +278,7 @@ void ramp(int32_t *lr, int n, float target) {
 extern "C" {
 
 void bw_aec_init(void) {
-    uint32_t s = 0x2545F491u;
-    for (int w = 0; w < PROBE / 32; w++) {
-        uint32_t bits = 0;
-        for (int b = 0; b < 32; b++) {
-            s ^= s << 13;
-            s ^= s >> 17;
-            s ^= s << 5;
-            bits |= (s >> 31) << b;
-        }
-        probe_bits[w] = bits;
-    }
-    for (int i = -1; i <= PROBE; i++) {
-        const int b = i >= 0 && i < PROBE ? probe_sign(i) : 0;
-        const int p = i - 1 >= 0 && i - 1 < PROBE ? probe_sign(i - 1) : 0;
-        const int q = i + 1 >= 0 && i + 1 < PROBE ? probe_sign(i + 1) : 0;
-        probe_d2[i + 1] = (int8_t)(2 * b - p - q);
-    }
+    bwprobe::init();
     for (int k = 0; k < TAPS; k++) {
         int acc = 0;
         for (int i = 0; i + k < PROBE; i++) acc += probe_sign(i) * probe_sign(i + k);

@@ -22,9 +22,11 @@ untested features (effects, sequencer) as working.
   typically tracks 1-3 bounced onto 4. The track the return lands on (the OP-1's selected one) must be muted in the
   mix; plan: detect it by finding the return in the incoming pairs. Presets and patterns stored per key
   (hold SAVE + key: store, hold SEL + key: recall); flash save stalls audio briefly.
-- Product plan (control map): GLO through-effects, FX bypass, SEQ sequencer, ARP arpeggiator, PLAY transport, HOME
-  overview + setup, LFO/ENV modulation routed to the effect chain (later the synth), SELECT pages, KNOB1-4 page
-  params, ALGORITHM source (OP-1 pair), PRESETS presets/patterns, MASTER level. SEL/EDIT/SAVE/REC unassigned.
+- Control map (built): HOME tracks / keys / USB / scope, GLO mixdown (11 pages; GLO again: mute the page's track),
+  SEQ sequencer (EDIT: step on/off, REC: record), ARP (ARP again: on/off), PLAY transport, REC outside SEQ: find the
+  return track, SAVE/SEL + key: store/load preset (pattern in SEQ), SELECT pages, KNOB1-4 page params, MASTER level.
+  FX, LFO, ENV, ALGORITHM, PRESETS unassigned or planned. Modules: bw_mix(ui) mixer, bw_seq(ui) sequencer/arp,
+  bw_store/bw_toast presets, bw_probe/bw_aec loop detection/canceller (aec not wired), bw_fx + fx_*.cc effects.
 - GPL-3.0-only, like MOOD_FM1 and GATOR: never copy its code into a clean-room project (an agent that has read this
   code does not edit one).
 - Unity build: `firmware/sys/fw.c` includes every `.c`; include order matters. Apps live in `firmware/apps/NAME/`

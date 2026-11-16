@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Daniel Pangerl */
-/* Beiwagen's HOME section (unity build, included once by app.c): the OP-1's tracks (the source lit, their levels),
- * the setup (the source and the keys on the knobs), the USB diagnostics and the scope (MOOD_FM1's visualizer). */
+/* Beiwagen's HOME section (unity build, included once by app.c): the OP-1's tracks as the mixer has them (in the mix,
+ * muted, the return) with their levels, the keys' settings, the USB diagnostics and the scope (MOOD_FM1's visualizer). */
 #ifndef BW_HOME_H
 #define BW_HOME_H
 
-#define SRC_PAIRS (FW_USB_PLAY_CH / 2)
+#include "bw_mix.h"
 
-static int32_t src_pair;                    /* the OP-1 pair heard: 0 = tape track 1 (USB mode 8) */
 static volatile uint32_t out_meter[2];      /* the output's peak, 0..32767, falling ~24 dB/s (the audio ISR's) */
 
 static void fmt_track(char* b, int32_t v, const ui_param_t* p)
@@ -15,12 +14,6 @@ static void fmt_track(char* b, int32_t v, const ui_param_t* p)
     (void)p;
     str_cpy(b, "Track ", 12);
     ui_cat_int(b, v + 1, 12);
-}
-
-static void fmt_num1(char* b, int32_t v, const ui_param_t* p)   /* 0-based, shown 1-based */
-{
-    (void)p;
-    fmt_int(b, v + 1);
 }
 
 static void fmt_oct(char* b, int32_t v, const ui_param_t* p)
@@ -32,23 +25,6 @@ static void fmt_oct(char* b, int32_t v, const ui_param_t* p)
     ui_cat_int(b, v, 8);
 }
 
-static void src_apply(int32_t v, const ui_param_t* p)
-{
-    (void)p;
-    usb_play_select((uint32_t)v);
-}
-
-static void src_step(int32_t detents)       /* ALGORITHM, on every page */
-{
-    int32_t v = src_pair + (detents > 0 ? 1 : detents < 0 ? -1 : 0);
-    v = v < 0 ? 0 : v >= SRC_PAIRS ? SRC_PAIRS - 1 : v;
-    if (v != src_pair) {
-        src_pair = v;
-        src_apply(v, 0);
-    }
-}
-
-static const ui_param_t P_SOURCE = { "Track", 0, SRC_PAIRS - 1, 1, &src_pair, fmt_num1, src_apply };
 static const ui_param_t P_OCTAVE = { "Octave", -3, 3, 1, &key_oct, fmt_oct, 0 };
 static const ui_param_t P_MIDI_CH = { "MIDI ch", 1, 16, 1, &key_ch, 0, 0 };
 static const ui_param_t P_VELOCITY = { "Velocity", 1, 127, 1, &key_vel, 0, 0 };
@@ -69,7 +45,7 @@ static void track_tile(uint32_t t, uint16_t bg, uint16_t fg)
     char b[4] = { (char)('1' + t), 0 };
     const uint32_t x = ui_tile_x(t), y = ui_tile_y(t);
     cv_begin(UI_TILE_W, TR_LVL_Y, bg);
-    ui_text(8, 6, &FONT_M, "Track", (int32_t)t == src_pair ? fg : C_SUB, bg);
+    ui_text(8, 6, &FONT_M, "Track", fg, bg);
     ui_text(8, 28, &FONT_V, b, fg, bg);
     cv_blit(x, y);
     lcd_fill(x, y + TR_LVL_Y, 8, UI_TILE_H - TR_LVL_Y, bg);
@@ -77,25 +53,34 @@ static void track_tile(uint32_t t, uint16_t bg, uint16_t fg)
     lcd_fill(x + 8u, y + TR_LVL_Y + 6u, UI_TILE_W - 16u, UI_TILE_H - TR_LVL_Y - 6u, bg);
 }
 
+/* a track's state in the mixer: lit (in the mix), dark (muted), amber (the return: the mix goes onto it) */
+static uint32_t track_state(uint32_t t)
+{
+    if (bw_mix_get(BW_MIX_P((int)t, BW_MIX_RETURN)) > BW_MIX_MAX / 2)
+        return 2u;
+    return bw_mix_get(BW_MIX_P((int)t, BW_MIX_MUTE)) > BW_MIX_MAX / 2 ? 0u : 1u;
+}
+
 static void tracks_tiles(uint32_t ms, int full)
 {
     static uint16_t hold[4];
-    static int32_t shown_src = -1;
-    uint16_t pk[FW_USB_PLAY_CH];
-    uint32_t t, n = usb_play_peaks(pk);
+    static uint32_t shown = 0xFFFFFFFFu;
+    uint32_t t, state = 0;
     (void)ms;
-    if (src_pair != shown_src)
+    for (t = 0; t < 4u; t++)
+        state |= track_state(t) << (2u * t);
+    if (state != shown)
         full = 1;
     for (t = 0; t < 4u; t++) {
-        const uint16_t bg = (int32_t)t == src_pair ? UI_KNOB_C[0] : C_TILE;
-        const uint32_t p = 2u * t + 1u < n ? (pk[2u * t] > pk[2u * t + 1u] ? pk[2u * t] : pk[2u * t + 1u]) : 0u;
-        const uint32_t m = hold[t] - (hold[t] >> 3);
+        const uint32_t st = track_state(t);
+        const uint16_t bg = st == 2u ? C_WARN : st == 1u ? C_TILE_HI : C_TILE;
+        const uint32_t p = (uint32_t)bw_mix_peak((int)t), m = hold[t] - (hold[t] >> 3);
         hold[t] = (uint16_t)(p > m ? p : m);
         if (full)
-            track_tile(t, bg, C_TEXT);
+            track_tile(t, bg, st == 2u ? RGB(10, 10, 12) : st ? C_TEXT : C_SUB);
         track_level(t, hold[t], bg);
     }
-    shown_src = src_pair;
+    shown = state;
 }
 
 /* ---- the USB diagnostics: what the host does with the playback stream */
@@ -130,7 +115,7 @@ static void diag_meters(uint32_t y, const uint16_t* pk, uint32_t n)
     cv_begin(240, 10u * 6u, C_BLACK);
     for (c = 0; c < n && c < 10u; c++) {
         const uint32_t m = hold[c] - (hold[c] >> 2);
-        const int heard = (c >> 1) == (uint32_t)src_pair;
+        const int heard = 1;
         hold[c] = (uint16_t)(pk[c] > m ? pk[c] : m);
         ui_meter(30, (int32_t)(6u * c), 200, 4, hold[c], heard ? C_TILE_HI : C_TILE);
         cv_rect(6 + (int32_t)(c & 1u) * 8, (int32_t)(6u * c), 6, 4, heard ? C_HI : C_DIM);
@@ -166,7 +151,8 @@ static void diag_screen(uint32_t ms, int full)
     diag_line(y, b, C_HI); y += 17u;
     diag_pair(b, "SETUP ", d.setups, "  ALT ", d.alt);
     diag_line(y, b, C_HI); y += 17u;
-    fmt_track(b, src_pair, 0);
+    str_cpy(b, "PAIRS ", sizeof b);
+    ui_cat_int(b, (int32_t)(d.ch / 2u), sizeof b);
     diag_line(y, b, C_WHITE); y += 18u;
     diag_meters(y, pk, n);
     y += 62u;
@@ -204,7 +190,7 @@ static void scope_screen(uint32_t ms, int full)
 }
 
 static const ui_page_t PG_TRACKS = { "Tracks", { 0 }, tracks_tiles, 0, 0 };
-static const ui_page_t PG_SETUP = { "Setup", { &P_SOURCE, &P_OCTAVE, &P_MIDI_CH, &P_VELOCITY }, 0, 0, 0 };
+static const ui_page_t PG_SETUP = { "Keys", { &P_OCTAVE, &P_MIDI_CH, &P_VELOCITY, 0 }, 0, 0, 0 };
 static const ui_page_t PG_USB = { "USB", { 0 }, 0, 0, diag_screen };
 static const ui_page_t PG_SCOPE = { "Scope", { 0 }, 0, 0, scope_screen };
 static const ui_page_t* const HOME_PAGES[] = { &PG_TRACKS, &PG_SETUP, &PG_USB, &PG_SCOPE };

@@ -123,6 +123,8 @@ void fmt_text(char *out, int max, const char *s) {
     end(t);
 }
 
+int shared_owner;
+
 } // namespace bwfx
 
 using namespace bwfx;
@@ -163,7 +165,18 @@ static float fade(float *al, float *ar, const float *bl, const float *br, int n,
     return g;
 }
 
+/* the chain's instance of an effect: the filter's 0, the others' one */
+static void *st(int k) { return CHAIN[k]->state(0); }
+
 static void block(int32_t *lr, int n) {
+    if (shared_owner != OWNER_CHAIN) { /* the mixer had the shared lines: they start over, with the chain's knobs */
+        for (int k = 0; k < COUNT; ++k)
+            if (CHAIN[k] != &FILTER) {
+                slot[k].running = 0;
+                slot[k].applied = slot[k].version - 1u;
+            }
+        shared_owner = OWNER_CHAIN;
+    }
     const int in = !bypassed;
     if (!in && chain_gain == 0.0f) {
         for (int i = 0; i < COUNT; ++i) slot[i].running = 0;
@@ -186,7 +199,7 @@ static void block(int32_t *lr, int n) {
         if (version != s.applied) {
             int v[4];
             for (int p = 0; p < 4; ++p) v[p] = s.value[p];
-            e.apply(v);
+            e.apply(st(k), v);
             s.applied = version;
         }
         const int on = s.on;
@@ -195,18 +208,18 @@ static void block(int32_t *lr, int n) {
             continue;
         }
         if (!s.running) {
-            e.reset();
+            e.reset(st(k));
             s.running = 1;
         }
         if (on && s.gain == 1.0f) {
-            e.process(L, R, n);
+            e.process(st(k), L, R, n);
             continue;
         }
         for (int i = 0; i < n; ++i) {
             SL[i] = L[i];
             SR[i] = R[i];
         }
-        e.process(L, R, n);
+        e.process(st(k), L, R, n);
         /* L, R are the processed; fade from the dry SL, SR into them and keep that */
         s.gain = fade(SL, SR, L, R, n, s.gain, on);
         for (int i = 0; i < n; ++i) {
@@ -236,12 +249,13 @@ void bw_fx_init(void) {
         s.on = 0;
         s.gain = 0.0f;
         s.running = 0;
-        CHAIN[k]->apply(CHAIN[k]->def);
-        CHAIN[k]->reset();
+        CHAIN[k]->apply(st(k), CHAIN[k]->def);
+        CHAIN[k]->reset(st(k));
         s.version = s.applied = 1;
     }
     bypassed = 0;
     chain_gain = 1.0f;
+    shared_owner = OWNER_CHAIN;
 }
 
 void bw_fx_process(int32_t *lr, uint32_t frames) {

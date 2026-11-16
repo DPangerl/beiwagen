@@ -18,20 +18,36 @@ const float PI = 3.14159265f;
 /* Steckfeld's per-sample glide and fade coefficients are tuned at 48 kHz: the same times at this rate */
 const float AT48 = 48000.0f / FW_FS_HZ;
 
-/* An effect as the chain drives it. apply() turns the knobs (0..1000) into targets; reset() clears the state and the
-   lines and jumps every glide to its target; process() runs a block in place. apply and process run in the
-   interrupt, apply at a block's start; reset there too, before the first block after the effect was off. */
+/* An effect as the chain (bw_fx.cc) and the mixer (bw_mix.cc) drive it, on one of its instances (state(i), i below
+   instances). apply() turns the knobs (0..1000) into targets; reset() clears the state and the lines and jumps every
+   glide to its target; process() runs a block in place. apply and process run in the interrupt, apply at a block's
+   start; reset there too, before the first block after the effect was off. */
 struct Effect {
     const char *name;
     const char *param[4];
     int def[4];
     int steps[4]; /* a choice parameter's positions, 0 = continuous */
-    void (*reset)();
-    void (*apply)(const int *v);
-    void (*process)(float *l, float *r, int n);
+    int instances;
+    void *(*state)(int i);
+    void (*reset)(void *st);
+    void (*apply)(void *st, const int *v);
+    void (*process)(void *st, float *l, float *r, int n);
     void (*format)(int p, int v, char *out, int max);
 };
 extern const Effect DISTORTION, FILTER, CHORUS, DELAY, REVERB;
+
+/* The filter has an instance for the chain (0) and one per mixer track (1 .. 4); every other effect has one, and
+   the delay, the reverb and the chorus own the pool's lines: the chain and the mixer share that one instance. Whoever
+   processes it records itself here; the other sees the change, reapplies its knobs and starts the effect from
+   silence (so only one of bw_fx_process / bw_mix_process should run per block). */
+const int FILTER_INSTANCES = 5;
+enum { OWNER_NONE, OWNER_CHAIN, OWNER_MIX };
+extern int shared_owner;
+/* the filter instance's rate from its next reset on: on, twice the sample rate (the default); off, the sample rate
+   (a quarter of the work, aliasing when driven) */
+void filter_oversample(void *st, int on);
+/* the delay's line as scratch while the delay is stopped (it starts from silence after); its size in int16 */
+int16_t *delay_scratch(int *count);
 
 inline float clampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
 inline float unit(int v) { return clampf((float)v * 0.001f, 0.0f, 1.0f); }

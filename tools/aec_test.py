@@ -23,7 +23,7 @@ def main():
     build.set_app("beiwagen")
     sanitize = not a.no_sanitize
     objs = [o for o in sim.compile_cxx(sanitize) if o.name.startswith("firmware_apps_beiwagen_") and
-            o.name.endswith("bw_aec.o")]
+            (o.name.endswith("bw_aec.o") or o.name.endswith("bw_probe.o"))]
     out = sim.HOST / "aec_test"
     inc = [f"-I{sim.SRC / d}" for d in ("firmware/sys", build.app_dir().relative_to(sim.SRC))]
     main_o = sim.HOST / "aec_test.o"

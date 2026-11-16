@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only */
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): midi_out_room */
 #pragma once
 #include <stdint.h>
 #include <string.h>
@@ -114,3 +115,4 @@ static void midi_out_event(uint32_t pkt)
     if (mo_w - mo_r < MQ)
         midi_out_q[mo_w++ % MQ] = pkt;
 }
+static uint32_t midi_out_room(void) { return MQ - (mo_w - mo_r); }

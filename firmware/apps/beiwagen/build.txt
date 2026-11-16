@@ -10,3 +10,6 @@ define FELUCCA_UAC=1
 define FW_USB_PRODUCT="Beiwagen FM-1"
 # the visualizer is paced by the display's SPI, not by its own code
 small avis.c
+# the sequencer runs in TIMER5 (app_tick, 10 kHz) and follows MIDI clock from the USB-MIDI rx (app_midi_rt)
+define APP_TICK=1
+define APP_MIDI_RT=1

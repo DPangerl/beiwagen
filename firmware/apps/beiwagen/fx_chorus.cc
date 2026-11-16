@@ -41,6 +41,8 @@ struct State {
 };
 State s;
 
+void *state(int i) { return i == 0 ? &s : 0; }
+
 /* 2^x, within 2e-6 relative: 2^floor(x) in the exponent bits, a polynomial for the rest */
 inline float fast_exp2(float x) {
     int n = (int)x;
@@ -62,7 +64,7 @@ void centre_depth(float &centre, float &depth) {
     depth = s.depth * (fl ? FLANGER_SWEEP : CHORUS_SWEEP) * FS;
 }
 
-void reset() {
+void reset(void *) {
     memset(line, 0, sizeof line);
     s.write = 0;
     s.sine = 0.0f;
@@ -78,7 +80,7 @@ void reset() {
     s.tone_c = one_pole(TONE_HZ);
 }
 
-void apply(const int *v) {
+void apply(void *, const int *v) {
     s.mode = choice(v[0], 3);
     const float w = 2.0f * PI * rate(v[1]) / FS;
     s.spin_s = sinf(w);
@@ -115,7 +117,7 @@ inline float phase(int c, float in, float sweep) {
     return x;
 }
 
-void process(float *l, float *r, int n) {
+void process(void *, float *l, float *r, int n) {
     const float dm = (s.mix_t - s.mix) / (float)n;
     float mix = s.mix;
     float centre_t, depth_t;
@@ -181,7 +183,8 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect CHORUS = {
-    "Chorus", {"Mode", "Rate", "Depth", "Mix"}, {0, 523, 500, 500}, {3, 0, 0, 0}, reset, apply, process, format,
+    "Chorus", {"Mode", "Rate", "Depth", "Mix"}, {0, 523, 500, 500}, {3, 0, 0, 0}, 1, state, reset, apply, process,
+    format,
 };
 
 } // namespace bwfx

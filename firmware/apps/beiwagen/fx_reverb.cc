@@ -74,6 +74,8 @@ struct State {
 };
 State s;
 
+void *state(int i) { return i == 0 ? &s : 0; }
+
 float decay_seconds(int v) { return expo(v, 0.1f, 30.0f); }
 
 /* the lines' and the diffusers' places in the pools (fixed: the longest size) */
@@ -120,7 +122,7 @@ void update(int snap) {
     if (snap) s.input = s.input_t;
 }
 
-void reset() {
+void reset(void *) {
     memset(lines, 0, sizeof lines);
     memset(diffuse, 0, sizeof diffuse);
     memset(pre, 0, sizeof pre);
@@ -146,7 +148,7 @@ void reset() {
     update(1);
 }
 
-void apply(const int *v) {
+void apply(void *, const int *v) {
     s.size = unit(v[0]);
     s.decay = decay_seconds(v[1]);
     s.damping = unit(v[2]);
@@ -194,7 +196,7 @@ inline void hadamard(float *x) {
     for (int i = 0; i < LINES; ++i) x[i] *= 0.35355339f;
 }
 
-void process(float *l, float *r, int n) {
+void process(void *, float *l, float *r, int n) {
     const float dm = (s.mix_t - s.mix) / (float)n;
     float mix = s.mix;
     for (int i = 0; i < n; ++i) {
@@ -259,7 +261,8 @@ void format(int p, int v, char *out, int max) {
 } // namespace
 
 const Effect REVERB = {
-    "Reverb", {"Size", "Decay", "Damping", "Mix"}, {500, 436, 400, 300}, {0, 0, 0, 0}, reset, apply, process, format,
+    "Reverb", {"Size", "Decay", "Damping", "Mix"}, {500, 436, 400, 300}, {0, 0, 0, 0}, 1, state, reset, apply, process,
+    format,
 };
 
 } // namespace bwfx

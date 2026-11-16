@@ -19,13 +19,21 @@ comes back.
   On the OP-1, set its MIDI to receive notes, not only send them.
 - **Diagnostics** (HOME, second page): the stream's counters, a meter per channel, the host's last USB requests.
 
-**Built, not yet tested on an FM-1:** effects on the chosen track: distortion, filter, chorus, delay and reverb in
-series, a page each (GLO, then SELECT), GLO again switches the page's effect on or off, FX bypasses them all.
+**Built, not yet tested on an FM-1:**
 
-**Planned:** modulation (LFO, ENV), a sequencer and arpeggiator, presets, and later synths of its own.
+- **Mixdown (GLO):** all four tracks in, each with level, pan, a filter/drive insert and sends to a shared delay
+  and reverb; GLO again mutes the page's track. REC finds the track the mix is recorded onto (the OP-1's selected
+  one) and keeps it out of the mix. Typical use: tracks 1-3 with effects, bounced onto track 4.
+- **Sequencer (SEQ) and arpeggiator (ARP):** 27 patterns of up to 32 steps, a step view, step entry and live
+  recording (REC in SEQ), swing, internal tempo or the OP-1's MIDI clock; the arp plays held keys. PLAY starts and
+  stops.
+- **Presets and patterns on the keys:** hold SAVE and press a key to store, hold SEL and press a key to load.
 
-The OP-1 puts its USB input on the selected track, together with what is played live, so a track is effected and
-recorded onto *another* track: select track 2, choose track 1 on the FM-1, play the tape and record.
+**Planned:** modulation (LFO, ENV), and later synths of its own.
+
+The OP-1 puts its USB input on the selected track, together with what is played live, so the mix is recorded onto
+a track that is not in it: select track 4 on the OP-1, press REC on the FM-1 once (it finds track 4 and mutes it in
+the mix), then play the tape and record.
 
 > [!WARNING]
 > **Installing custom firmware is at your own risk.** Beiwagen is unofficial firmware, provided as is, without any

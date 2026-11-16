@@ -4,7 +4,8 @@
  * input; the keys play the OP-1 over USB-MIDI. The platform's USB audio is sys/usb.c (FW_USB_PLAY in, FELUCCA_UAC
  * out; build.txt).
  * From FM1_AudioBase's app (stevexfer, GPL-3.0-only). Modified for Beiwagen, 2026 (Daniel Pangerl): pages and
- * sections (bw_ui.h), HOME (bw_home.h), the keys as MIDI (bw_keys.h), the source pair, the effects (bw_fxui.h) */
+ * sections (bw_ui.h), HOME (bw_home.h), the keys as MIDI (bw_keys.h), the 4-track mixdown (bw_mixui.h), the
+ * sequencer and arpeggiator (bw_sequi.h), presets and patterns on the keys (bw_store.h) */
 #include "bw_fw.h"
 #include "avis.h"
 
@@ -15,12 +16,15 @@
 #include "bw_ui.h"
 #include "bw_keys.h"
 #include "bw_home.h"
-#include "bw_fxui.h"
+#include "bw_mixui.h"
+#include "bw_sequi.h"
+#include "bw_toast.h"
+#include "bw_store.h"
 
 /* the audio interrupt's (the main loop only reads them, but the gain's target) */
 static volatile int32_t bw_gain_target;     /* Q15: the main loop's, from MASTER */
 static int32_t bw_gain;                     /* Q15: ramped to the target over a block */
-static int16_t bw_in[2u * FW_BLOCK];
+static int16_t bw_in[FW_USB_PLAY_CH * FW_BLOCK];   /* every pair, pair k at bw_in + 2 * frames * k */
 static int16_t bw_scope[BW_SCOPE];
 static volatile uint32_t bw_scope_w;
 
@@ -38,6 +42,25 @@ void bw_scope_read(int16_t* dst, int n)
         dst[i] = bw_scope[(w - (uint32_t)n + (uint32_t)i) & (BW_SCOPE - 1u)];
 }
 
+/* ---- the sequencer in TIMER5 (build.txt: APP_TICK, APP_MIDI_RT) */
+static void app_tick(void) { seq_tick(); }
+static void app_midi_rt(uint32_t status) { seq_midi_rt(status); }
+
+/* ---- what the store keeps: the mixer as a preset, the pattern being edited as a pattern */
+static void preset_get(void* dst) { bw_mix_save(dst, BW_MIX_BLOB); }
+static void preset_set(const void* src) { bw_mix_load(src, BW_MIX_BLOB); }
+static void pattern_get(void* dst) { seq_blob_get(seq_pat_next, dst); }
+static void pattern_set(const void* src)
+{
+    seq_blob_set(seq_pat_next, src, SEQ_BLOB);
+    seq_ui_sync();
+}
+static int seq_busy(void) { return seq_run; }   /* a flash save stalls the clock: not while the pattern plays */
+static const bw_store_prov_t PROV_PRESET = { BW_MIX_BLOB, 1, preset_get, preset_set, preset_get, 0 };
+static const bw_store_prov_t PROV_PATTERN = { SEQ_BLOB, 1, pattern_get, pattern_set, pattern_get, 0 };
+BW_STORE_FITS(BW_MIX_BLOB);
+BW_STORE_FITS(SEQ_BLOB);
+
 /* ---- sections still to be built: a tile that says so */
 static void planned_tiles(uint32_t ms, int full)
 {
@@ -52,18 +75,14 @@ static void planned_tiles(uint32_t ms, int full)
         lcd_fill(ui_tile_x(i), ui_tile_y(i), UI_TILE_W, UI_TILE_H, C_BG);
 }
 
-static const ui_page_t PG_SEQ = { "Pattern", { 0 }, planned_tiles, 0, 0 };
-static const ui_page_t PG_ARP = { "Arpeggiator", { 0 }, planned_tiles, 0, 0 };
 static const ui_page_t PG_LFO = { "LFO", { 0 }, planned_tiles, 0, 0 };
 static const ui_page_t PG_ENV = { "Follower", { 0 }, planned_tiles, 0, 0 };
-static const ui_page_t* const SEQ_PAGES[] = { &PG_SEQ };
-static const ui_page_t* const ARP_PAGES[] = { &PG_ARP };
 static const ui_page_t* const LFO_PAGES[] = { &PG_LFO };
 static const ui_page_t* const ENV_PAGES[] = { &PG_ENV };
 
 static const ui_section_t SECTIONS[] = {
     { "HOME", FW_BTN_HOME, HOME_PAGES, FW_NELEM(HOME_PAGES) },
-    { "FX", FW_BTN_GLO, FX_PAGES, FW_NELEM(FX_PAGES) },
+    { "MIX", FW_BTN_GLO, MIX_PAGES, FW_NELEM(MIX_PAGES) },
     { "SEQ", FW_BTN_SEQ, SEQ_PAGES, FW_NELEM(SEQ_PAGES) },
     { "ARP", FW_BTN_ARP, ARP_PAGES, FW_NELEM(ARP_PAGES) },
     { "LFO", FW_BTN_LFO, LFO_PAGES, FW_NELEM(LFO_PAGES) },
@@ -105,34 +124,50 @@ static void nav(const fw_input_t* in)
         fw_led_button(SECTIONS[i].button, i == sec);
 }
 
-/* the footer: the source on the left, the status on the right; drawn when something in it changed */
+/* the mixer's return track (the one the OP-1 records the mix onto), -1 none */
+static int32_t return_track(void)
+{
+    int32_t t;
+    for (t = 0; t < BW_MIX_TRACKS; t++)
+        if (bw_mix_get(BW_MIX_P(t, BW_MIX_RETURN)) > BW_MIX_MAX / 2)
+            return t;
+    return -1;
+}
+
+/* the footer: where the mix goes on the left, the status on the right (a toast over it while one shows); drawn when
+   something in it changed */
 static void footer(uint32_t ms, int full)
 {
     static uint32_t shown_key = 0xFFFFFFFFu, cpu_ms;
     static int32_t cpu;
     const int play = usb_play_state() == 2;
+    const int32_t ret = return_track();
     uint32_t key;
     char b[24];
     int32_t x;
+    if (toast_footer(ms, &full))
+        return;
     if (ms - cpu_ms >= 500u) {
         cpu = (int32_t)(fw_stats.cpu_q8 * 100u >> 8);
         cpu_ms = ms;
     }
-    key = (uint32_t)src_pair | (uint32_t)play << 3 | (uint32_t)fx_bypass << 4 | (uint32_t)cpu << 8;
+    key = (uint32_t)(ret + 1) | (uint32_t)play << 3 | (uint32_t)cpu << 8;
     if (!full && key == shown_key)
         return;
     shown_key = key;
     cv_begin(240, UI_FOOT_H, C_BG);
-    fmt_track(b, src_pair, 0);
-    ui_text(4, 0, &FONT_M, b, play ? C_TEXT : C_SUB, C_BG);
+    str_cpy(b, "Mix to ", sizeof b);           /* REC finds the track it goes to */
+    if (ret < 0)
+        ui_cat(b, "?", sizeof b);
+    else
+        ui_cat_int(b, ret + 1, sizeof b);
+    ui_text(4, 3, &FONT_T, b, ret < 0 ? C_SUB : C_TEXT, C_BG);
     str_cpy(b, "CPU ", sizeof b);
     ui_cat_int(b, cpu, sizeof b);
     ui_cat(b, "%", sizeof b);
     x = 236 - text_w(&FONT_T, b);
     ui_text(x, 3, &FONT_T, b, C_SUB, C_BG);
-    if (fx_bypass)
-        ui_text(x - 10 - text_w(&FONT_T, "Bypass"), 3, &FONT_T, "Bypass", C_WARN, C_BG);
-    else if (!play)
+    if (!play)
         ui_text(x - 10 - text_w(&FONT_T, "No OP-1"), 3, &FONT_T, "No OP-1", C_WARN, C_BG);
     cv_blit(0, UI_FOOT_Y);
 }
@@ -189,9 +224,14 @@ static void draw(const ui_page_t* pg, const fw_input_t* in)
 static void app_init(void)
 {
     keys_init();
-    fx_ui_init();
+    mix_ui_init();
+    seq_ui_init();
     usb_play_enable(1);
-    usb_play_select((uint32_t)src_pair);
+    bw_store_init();
+    bw_store_register(BW_BANK_PRESET, &PROV_PRESET);
+    bw_store_register(BW_BANK_PATTERN, &PROV_PATTERN);
+    bw_store_busy = seq_busy;
+    bw_store_session_load();
 }
 
 static void app_frame(const fw_input_t* in)
@@ -200,32 +240,43 @@ static void app_frame(const fw_input_t* in)
     bw_gain_target = master_gain(in->master);
     while (fw_midi_read(&m))   /* (drained: a full ring would hold the host's SysEx back too) */
         ;
-    keys_frame(in);
-    src_step(in->knob[FW_KNOB_ALGO]);
-    if (in->pressed & FW_BIT(FW_BTN_FX)) {
-        fx_bypass = !fx_bypass;
-        bw_fx_bypass(fx_bypass);
+    {
+        const uint32_t in_seq = SECTIONS[sec].button == FW_BTN_SEQ;
+        fw_input_t k = *in;                 /* keys the store or the arp take do not sound themselves */
+        k.keys_pressed &= ~bw_store_frame(in, in_seq ? BW_BANK_PATTERN : BW_BANK_PRESET);
+        k.keys_pressed &= ~seq_keys(&k, key_oct, key_vel, key_ch, (int)in_seq);
+        keys_frame(&k);
+        fw_leds_keys(in->keys | seq_key_leds(key_oct));
+        bw_store_leds();
+        if (in->pressed & FW_BIT(FW_BTN_REC)) {   /* REC: record in SEQ, elsewhere find the return track */
+            if (in_seq)
+                seq_rec_toggle();
+            else
+                mix_detect();
+        }
+        if ((in->pressed & FW_BIT(FW_BTN_EDIT)) && in_seq)
+            seq_ui_edit();
     }
+    if (in->pressed & FW_BIT(FW_BTN_PLAY))
+        seq_play();
     if ((in->pressed & FW_BIT(FW_BTN_GLO)) && SECTIONS[sec].button == FW_BTN_GLO)
-        fx_toggle(SECTIONS[sec].pages[sec_page[sec]]);
-    fw_led_button(FW_BTN_FX, fx_bypass);
-    fw_led_button(FW_BTN_PLAY, usb_play_state() == 2);
-    fw_led_button(FW_BTN_REC, usb_rec_state() == 2);
+        mix_toggle_mute(SECTIONS[sec].pages[sec_page[sec]]);
+    if ((in->pressed & FW_BIT(FW_BTN_ARP)) && SECTIONS[sec].button == FW_BTN_ARP)
+        seq_arp_toggle();
+    seq_ui_frame();
+    seq_leds(in->ms);
     nav(in);
     draw(SECTIONS[sec].pages[sec_page[sec]], in);
 }
 
-/* the OP-1's pair (or silence) through the effects, its scope, then the volume and the output's meters */
+/* the OP-1's four tracks (or silence) through the mixer, its scope, then the volume and the output's meters; the
+   mixer sees the final output last (its return detection) */
 static void app_audio(int32_t* lr, uint32_t frames)
 {
     const int32_t g1 = bw_gain_target, step = (g1 - bw_gain) / (int32_t)frames;
     int32_t g = bw_gain;
     uint32_t i, pk[2] = { 0, 0 }, w = bw_scope_w;
-    if (!(usb_play_begin() && usb_play_read(bw_in, frames)))
-        memset(bw_in, 0, frames * 2u * sizeof bw_in[0]);
-    for (i = 0; i < 2u * frames; i++)
-        lr[i] = bw_in[i];
-    bw_fx_process(lr, frames);
+    bw_mix_process(usb_play_begin() && usb_play_read_pairs(bw_in, frames) ? bw_in : 0, FW_USB_PLAY_CH / 2, lr, frames);
     for (i = 0; i < frames; i++) {
         const int32_t l = lr[2u * i], r = lr[2u * i + 1u];
         int32_t ol, or_;
@@ -241,6 +292,7 @@ static void app_audio(int32_t* lr, uint32_t frames)
         pk[1] = (uint32_t)or_ > pk[1] ? (uint32_t)or_ : pk[1];
     }
     bw_gain = g1;
+    bw_mix_output(lr, frames);
     bw_scope_w = w;
     for (i = 0; i < 2u; i++) {
         const uint32_t m = out_meter[i] - (out_meter[i] >> 6);
