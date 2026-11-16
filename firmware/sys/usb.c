@@ -7,7 +7,9 @@
  * FW_USB_PLAY_CH channels (one pair heard, each channel's peak), SET_CUR on EP3, usb_diag (counters, the host's
  * last control requests); every pair resampled (the ring holds all FW_USB_PLAY_CH channels, usb_play_read_pairs;
  * usb_play_read still gives the selected pair), the reader's points read from the ring; the app's MIDI clock hook
- * (APP_MIDI_RT), midi_out_room, usb_midi_nested */
+ * (APP_MIDI_RT), midi_out_room, usb_midi_nested
+ * Modified for Fernbedienung, 2026 (Daniel Pangerl): with APP_SYSEX a SysEx start waits (NAK) while the last frame
+ * is pending, so the app gets every frame of a burst */
 /* USB full-speed device on USB0: a class-compliant USB-MIDI interface.
  * All SIE traffic happens in usb_poll(), called from the TIMER5 ISR at 2 kHz,
  * so INDEX is never shared and no USB IRQ is needed. MIDI in goes to a ring
@@ -893,6 +895,14 @@ static void midi_in_event(uint32_t pkt)
  * shares the ring and cannot wait. The update loader never drains the ring: no back-pressure there.
  * (After Felucca 1.0.) */
 #define EP1_ROOM (16u + 8u)
+#if defined(APP_SYSEX) && FELUCCA_OTA && !defined(FELUCCA_LOADER)
+/* An app that takes SysEx (app_sysex) gets a burst whole: a SysEx start waits, the packet held from that event on,
+ * while the frame before it is still pending (else it was dropped while the main loop draws) */
+#define EP1_SX_WAIT 1
+static uint32_t ep1_off;                                /* bytes of the held packet already taken */
+#else
+#define EP1_SX_WAIT 0
+#endif
 static int ep1_take(const uint8_t *b, uint32_t n)
 {
     uint32_t i;
@@ -900,8 +910,19 @@ static int ep1_take(const uint8_t *b, uint32_t n)
     if (MQ - (mi_w - mi_r) < EP1_ROOM)
         return 0;
 #endif
+#if EP1_SX_WAIT
+    for (i = ep1_off; i + 3u < n; i += 4u) {
+        if (sx_ready && (b[i] & 15u) >= 4u && (b[i] & 15u) <= 7u && b[i + 1] == 0xF0u) {
+            ep1_off = i;
+            return 0;
+        }
+        midi_in_event((uint32_t)b[i] | (uint32_t)b[i + 1] << 8 | (uint32_t)b[i + 2] << 16 | (uint32_t)b[i + 3] << 24);
+    }
+    ep1_off = 0;
+#else
     for (i = 0; i + 3u < n; i += 4u)
         midi_in_event((uint32_t)b[i] | (uint32_t)b[i + 1] << 8 | (uint32_t)b[i + 2] << 16 | (uint32_t)b[i + 3] << 24);
+#endif
     return 1;
 }
 
@@ -1462,6 +1483,9 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
         usb.e0_tx = 0;
         usb.has_pend_addr = 0;
         usb.rx_pend = 0;
+#if EP1_SX_WAIT
+        ep1_off = 0;
+#endif
 #if FELUCCA_CDC
         cdc.dtr = 0;
         cdc.e0_rx = 0;

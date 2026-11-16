@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
- * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit) */
+ * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): a screen while it writes (ldr_screen.c) */
 /* Felucca update loader (device side). Runs from RAM, started by the SPL from
  * an update record, with interrupts off: USB is polled from the main loop.
  * It is a USB-MIDI device "Felucca Update" (1209:0002) that answers the
@@ -23,6 +24,7 @@
 #include "fm1_flash.h"
 #include "../sys/libc.c"
 #include "../sys/usb.c"
+#include "ldr_screen.c"
 
 static uint32_t ldr_ms(void)   /* monotonic ms; survives the TIMER4 wrap (178.9 s) */
 {
@@ -40,6 +42,7 @@ static void ldr_poll(void)                          /* USB at ~2 kHz, watchdog *
     static uint32_t last;
     uint32_t now = fm1_ticks();
     fm1_wdt_feed();
+    ldr_screen_tick();
     if (now - last >= 500u * FM1_TICKS_PER_US) {
         last = now;
         usb_poll();
@@ -83,6 +86,7 @@ void ldr_main(void)
 {
     fm1_wdt_arm(0x0D);                              /* ~8 s, fed by ldr_poll */
     fm1_time_init();
+    ldr_screen_init();
     usb_start();
     for (;;) {
         ldr_poll();

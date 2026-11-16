@@ -26,6 +26,8 @@ static void fx_apply(int32_t v, const ui_param_t* p) { bw_fx_set(p->tag / BW_FX_
 
 /* the header's corner: the chain, a square per effect, lit when on (amber: all bypassed), the page's underlined. Drawn
    with the page, then again only when an effect is switched */
+#define FX_CORNER_W (5u * 16u)
+
 static void fx_corner(uint32_t ms, int full)
 {
     static uint32_t shown = 0xFFFFFFFFu;
@@ -36,14 +38,14 @@ static void fx_corner(uint32_t ms, int full)
         state |= (uint32_t)(bw_fx_enabled((int)i) != 0) << i;
     if (!full && state == shown)
         return;
-    cv_begin(5 * 16, UI_HEAD_H, C_BG);
+    cv_begin(FX_CORNER_W, UI_HEAD_H, C_BG);
     for (i = 0; i < FX_N; i++) {
         const uint16_t on = fx_bypass ? C_WARN : C_TEXT;
         cv_rect(2 + 16 * i, 4, 12, 12, bw_fx_enabled((int)i) ? on : C_TILE_HI);
         if (ui_cur == &fx_page[i])
             cv_rect(2 + 16 * i, 18, 12, 2, C_TEXT);
     }
-    cv_blit(240 - 5 * 16, 0);
+    cv_blit(240u - FX_CORNER_W, 0);
     shown = state;
 }
 
@@ -54,6 +56,7 @@ static void fx_ui_init(void)
     for (fx = 0; fx < FX_N && fx < bw_fx_count(); fx++) {
         fx_page[fx].title = bw_fx_name(fx);
         fx_page[fx].corner = fx_corner;
+        fx_page[fx].corner_w = FX_CORNER_W;
         for (p = 0; p < BW_FX_PARAMS; p++) {
             ui_param_t* q = &fx_param[fx][p];
             const int steps = bw_fx_steps(fx, p);

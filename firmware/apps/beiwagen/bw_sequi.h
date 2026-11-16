@@ -294,12 +294,12 @@ static void seq_roll_tiles(uint32_t ms, int full)
     sq_info(q, full);
 }
 
-static const ui_page_t PG_SQ_ROLL = { "Steps", { &P_SQ_STEP, &P_SQ_NOTE, &P_SQ_VEL, &P_SQ_GATE }, seq_roll_tiles, seq_corner, 0 };
-static const ui_page_t PG_SQ_STEP = { "Step", { &P_SQ_STEP, &P_SQ_NOTE, &P_SQ_VEL, &P_SQ_GATE }, 0, seq_corner, 0 };
-static const ui_page_t PG_SQ_PAT = { "Pattern", { &P_SQ_PAT, &P_SQ_LEN, &P_SQ_CH, &P_SQ_SWING }, 0, seq_corner, 0 };
-static const ui_page_t PG_SQ_CLOCK = { "Clock", { &P_SQ_TEMPO, &P_SQ_SYNC, &P_SQ_CLKOUT, 0 }, 0, seq_corner, 0 };
-static const ui_page_t PG_ARP_MAIN = { "Arp", { &P_ARP_MODE, &P_ARP_RATE, &P_ARP_GATE, &P_ARP_OCT }, 0, seq_corner, 0 };
-static const ui_page_t PG_ARP_KEYS = { "Arp keys", { &P_ARP_ON, &P_ARP_LATCH, 0, 0 }, 0, seq_corner, 0 };
+static const ui_page_t PG_SQ_ROLL = { "Steps", { &P_SQ_STEP, &P_SQ_NOTE, &P_SQ_VEL, &P_SQ_GATE }, seq_roll_tiles, seq_corner, 0, SQ_CORNER_W };
+static const ui_page_t PG_SQ_STEP = { "Step", { &P_SQ_STEP, &P_SQ_NOTE, &P_SQ_VEL, &P_SQ_GATE }, 0, seq_corner, 0, SQ_CORNER_W };
+static const ui_page_t PG_SQ_PAT = { "Pattern", { &P_SQ_PAT, &P_SQ_LEN, &P_SQ_CH, &P_SQ_SWING }, 0, seq_corner, 0, SQ_CORNER_W };
+static const ui_page_t PG_SQ_CLOCK = { "Clock", { &P_SQ_TEMPO, &P_SQ_SYNC, &P_SQ_CLKOUT, 0 }, 0, seq_corner, 0, SQ_CORNER_W };
+static const ui_page_t PG_ARP_MAIN = { "Arp", { &P_ARP_MODE, &P_ARP_RATE, &P_ARP_GATE, &P_ARP_OCT }, 0, seq_corner, 0, SQ_CORNER_W };
+static const ui_page_t PG_ARP_KEYS = { "Arp keys", { &P_ARP_ON, &P_ARP_LATCH, 0, 0 }, 0, seq_corner, 0, SQ_CORNER_W };
 static const ui_page_t* const SEQ_PAGES[] = { &PG_SQ_ROLL, &PG_SQ_STEP, &PG_SQ_PAT, &PG_SQ_CLOCK };
 static const ui_page_t* const ARP_PAGES[] = { &PG_ARP_MAIN, &PG_ARP_KEYS };
 

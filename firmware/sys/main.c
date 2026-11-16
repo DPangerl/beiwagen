@@ -4,7 +4,8 @@
  * Modified for MOOD_FM1, 2026: FW_UBOOT_LABELS, FW_USB_PLAY
  * Modified for FM1_AudioBase, 2026: the USB audio input's packets nested in the render (FELUCCA_UAC)
  * Modified for Beiwagen, 2026 (Daniel Pangerl): the USB playback endpoint read every tick (FW_USB_PLAY); the app's
- * TIMER5 hook (APP_TICK: app_tick every tick, 10 kHz) and with it the MIDI endpoint served inside the render too */
+ * TIMER5 hook (APP_TICK: app_tick every tick, 10 kHz) and with it the MIDI endpoint served inside the render too;
+ * the system settings (settings.c) over the app */
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[];
 #if FM1_CPU1_USED
@@ -198,6 +199,7 @@ static void fw_main(void)
     fw_splash();
     splash_t = fm1_ticks();
     fm1_input_init();
+    fw_settings_init();
     fm1_adc_init();
     app_init();
 #if FM1_CPU1_USED
@@ -231,7 +233,10 @@ static void fw_main(void)
         fw_service_usb();
         fw_stats.usb_up = usb.config && !usb.suspended;
         fw_input_read(&in);
+        fw_settings_frame(&in);
+        lcd_muted = fw_set_open;
         app_frame(&in);
+        lcd_muted = 0;
         while (fm1_ms - m < FW_FRAME_MS)
             fw_service_usb();
     }

@@ -2,7 +2,9 @@
  * Copyright (C) 2026 npi3pak
  * Modified for Beiwagen, 2026 (Daniel Pangerl): usb_diag, usb_play_select, usb_play_peaks, usb_play_read_pairs stubs;
  * the app's TIMER5 hook (APP_TICK, 10 kHz) and MIDI clock hook (APP_MIDI_RT), the MIDI out ring drained as the USB
- * poll does */
+ * poll does
+ * Modified for Fernbedienung, 2026 (Daniel Pangerl): the app's SysEx (APP_SYSEX: `sysex HEX..` feeds app_sysex, what
+ * it sends is printed), `usbup 0|1`, `midiout 0|1` prints the MIDI the app sends */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +22,8 @@
 #endif
 
 static fw_stats_t fw_stats;
+static uint32_t fw_theme(void) { return FW_THEME_SYNC; }   /* (the system settings run on the device only) */
+static void fw_lights_off(uint32_t labels) { (void)labels; }
 static uint8_t host_store[FW_STORE_SLOTS][FW_STORE_MAX];
 static uint32_t host_store_len[FW_STORE_SLOTS];
 
@@ -95,6 +99,19 @@ static int usb_play_read_pairs(int16_t *d, uint32_t n)
     return 1;
 }
 
+#ifdef APP_SYSEX
+/* sys/usb.c's: one F0..F7 message to the host, printed */
+static int ota_wire_send(const uint8_t *p, uint32_t n)
+{
+    uint32_t i;
+    printf("sysex out");
+    for (i = 0; i < n; i++)
+        printf(" %02X", p[i]);
+    printf("\n");
+    return 0;
+}
+#endif
+
 #include "libc.c"
 #include "lcd.c"
 #include "gfx.c"
@@ -119,6 +136,17 @@ static void host_render_until(uint32_t ms)
     }
 }
 
+static int host_midi_out;                  /* midiout 1: print what the app sends */
+
+static void host_midi_drain(void)
+{
+    for (; mo_r != mo_w; mo_r++) {
+        const uint32_t p = midi_out_q[mo_r % MQ];
+        if (host_midi_out)
+            printf("midi out %02X %02X %02X\n", (p >> 8) & 0xFFu, (p >> 16) & 0xFFu, p >> 24);
+    }
+}
+
 static void host_frames(uint32_t n)
 {
     fw_input_t in;
@@ -127,13 +155,14 @@ static void host_frames(uint32_t n)
         uint32_t t;
         for (t = 0; t < 150u; t++) {        /* TIMER5: 10 kHz; the host takes what it queued */
             app_tick();
-            mo_r = mo_w;
+            host_midi_drain();
         }
 #endif
         fm1_ms += 15u;
         host_render_until(fm1_ms);
         fw_input_read(&in);
         app_frame(&in);
+        host_midi_drain();
     }
 }
 
@@ -239,6 +268,26 @@ static void host_bench(uint32_t ms)
     printf("bench %u blocks %.1f us/block\n", blocks, (double)(clock() - t0) * 1e6 / CLOCKS_PER_SEC / blocks);
 }
 
+#ifdef APP_SYSEX
+/* sysex F0 7D .. F7 (hex, F0 / F7 optional): the bytes between them to app_sysex, as sys/main.c hands a frame on */
+static void host_sysex(const char *s)
+{
+    static uint8_t b[640];
+    uint32_t n = 0;
+    char *end;
+    while (*s) {
+        const unsigned long v = strtoul(s, &end, 16);
+        if (end == s)
+            break;
+        s = end;
+        if (v != 0xF0u && v != 0xF7u && n < sizeof b)
+            b[n++] = (uint8_t)(v & 0x7Fu);
+    }
+    if (n && b[0] != 0)
+        app_sysex(b, n);
+}
+#endif
+
 static int host_command(char *line)
 {
     char cmd[32] = {0}, a[256] = {0}, b[32] = {0}, c[32] = {0};
@@ -272,6 +321,14 @@ static int host_command(char *line)
     }
     if (str_eq(cmd, "usbrec"))
         host_usb_rec = atoi(a);
+    if (str_eq(cmd, "usbup"))
+        fw_stats.usb_up = (uint32_t)atoi(a);
+    if (str_eq(cmd, "midiout"))
+        host_midi_out = atoi(a);
+#ifdef APP_SYSEX
+    if (str_eq(cmd, "sysex"))
+        host_sysex(line + 6);
+#endif
     if (str_eq(cmd, "logo"))
         draw_logo();
     if (str_eq(cmd, "leds"))
@@ -281,7 +338,7 @@ static int host_command(char *line)
 
 int main(void)
 {
-    char line[512];
+    static char line[4096];
     host_wav = calloc(2u * HOST_MAX_SAMPLES, sizeof *host_wav);
     lcd_init();
     app_init();

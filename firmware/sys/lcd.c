@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+ * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): lcd_muted */
 /* ST7789-class 240x240 panel on SPI1: PC9 CLK, PC10 DO, PC7 CS, PC8 D/C,
  * backlight PA2 active low. Polled DMA transfers; every source buffer must be
  * in RAM. A pixel transfer is left running (lcd_busy): the next LCD access, or
@@ -12,6 +13,7 @@
 
 static uint8_t lcd_small[64];
 static uint8_t lcd_busy;           /* a lcd_data DMA may still run; CS is low */
+static uint8_t lcd_muted;          /* fills and blits do nothing (the app's, under the system settings) */
 
 static void lcd_spin(uint32_t n)
 {
@@ -68,7 +70,7 @@ static uint16_t lcd_fillbuf[240];
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, n, k, sw = (uint16_t)((c >> 8) | (c << 8));
-    if (!w || !h || x >= 240u || y >= 240u)
+    if (lcd_muted || !w || !h || x >= 240u || y >= 240u)
         return;
     if (x + w > 240u)
         w = 240u - x;
@@ -88,7 +90,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
-    if (!w || !h)
+    if (lcd_muted || !w || !h)
         return;
     lcd_window(x, y, x + w - 1u, y + h - 1u);
     lcd_data(px, w * h * 2u);

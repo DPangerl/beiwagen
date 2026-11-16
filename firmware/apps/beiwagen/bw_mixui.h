@@ -95,6 +95,7 @@ static void mix_page_set(uint32_t i, const char* title, int p0, int p1, int p2, 
     int k;
     mix_page[i].title = title;
     mix_page[i].corner = mix_corner;
+    mix_page[i].corner_w = MIX_CORNER_W;
     for (k = 0; k < 4; k++)
         mix_page[i].p[k] = ps[k] >= 0 ? &mix_param[ps[k]] : 0;
 }

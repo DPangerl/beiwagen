@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+ * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): FL_SYS, the system settings' sector */
 /* FM-1 SPI NOR at runtime: erase / program / read. Used only when
  * FELUCCA_FLASH is 1.
  *
@@ -44,14 +45,17 @@ static inline void *fl_far(void *p) { void *volatile q = p; return q; }
 #define FL_FM6_LO       0x000E5000u                /* the FM6 patch bank (fm6_bank.c), A / B sectors; SLOOP 2.4 */
 #define FL_FM6_HI       0x000E7000u
 #define FL_USR4_LO      0x000E7000u                /* the user sample slot USR4 (eng_sample.c), 80 KiB; SLOOP 2.4 */
-#define FL_USR4_HI      0x000FB000u                /* (0xFB000..0xFBFFF stays free) */
+#define FL_USR4_HI      0x000FB000u
+#define FL_SYS_LO       0x000FB000u                /* the system settings (sys/settings.c), one sector */
+#define FL_SYS_HI       0x000FC000u
 /* [off, off + n) inside [lo, hi), without wrapping: off + n can overflow, and
  * the 1 MiB part ignores the high address bits, so a wrapped range lands low. */
 #define FL_IN(off, n, lo, hi) ((uint32_t)(off) >= (lo) && (uint32_t)(off) <= (hi) && \
                                (uint32_t)(n) <= (hi) - (uint32_t)(off))
 /* Felucca's own store (projects, user samples; settings; the FM6 bank) */
 #define FL_STORE_OK(off, n) (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI) || FL_IN(off, n, FL_GLOB_LO, FL_GLOB_HI) || \
-                             FL_IN(off, n, FL_FM6_LO, FL_FM6_HI) || FL_IN(off, n, FL_USR4_LO, FL_USR4_HI))
+                             FL_IN(off, n, FL_FM6_LO, FL_FM6_HI) || FL_IN(off, n, FL_USR4_LO, FL_USR4_HI) || \
+                             FL_IN(off, n, FL_SYS_LO, FL_SYS_HI))
 /* Where the RAM driver may erase / program. The app build allows only its own
  * data regions; the update loader (firmware/loader) defines its own window. */
 #ifndef FL_RANGE_OK

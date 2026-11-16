@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Modified for Beiwagen, 2026 (Daniel Pangerl): --fs from the app's build.txt, the default app beiwagen
+# Modified for Fernbedienung, 2026 (Daniel Pangerl): the script commands usbup, midiout, sysex
 """Build the host simulator (the app's C code with a stub HAL) and run a script.
 
   tools/sim.py [SCRIPT]          default script: host/<app>.sim
@@ -10,7 +11,9 @@
 
 Script lines: frames N | key K down|up | btn NAME down|up | knob NAME STEPS |
 master 0..1023 | midi STATUS D1 D2 | usbtone HZ [DBFS] (the computer plays a sine; 0 stops) |
-usbrec 0|1|2 (the computer records: no stream, selected, taken) | screen PATH.ppm | wav PATH.wav | leds | quit
+usbrec 0|1|2 (the computer records: no stream, selected, taken) | usbup 0|1 (USB configured) |
+midiout 0|1 (print the MIDI the app sends) | sysex HEX.. (an APP_SYSEX app: one SysEx from the host) |
+screen PATH.ppm | wav PATH.wav | leds | quit
 PPM screens are also saved as 2x PNG when Pillow is installed.
 """
 import argparse

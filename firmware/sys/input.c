@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only */
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): fw_input_t.redraw */
 static const uint8_t FW_BTN_MATRIX[FW_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1};
 static const uint8_t FW_KNOB_MATRIX[FW_KNOB_COUNT] = {0, 1, 6, 2, 3, 4, 5};
 static const char *const FW_BTN_NAME[FW_BTN_COUNT] = {
@@ -50,6 +51,7 @@ static void fw_input_read(fw_input_t *in)
     if (batt > 0)
         fw_batt_raw = (uint32_t)((int32_t)fw_batt_raw + (batt - (int32_t)fw_batt_raw) / 32);
     in->battery = fw_batt_raw;
+    in->redraw = 0;
 }
 
 static void fw_led_button(uint32_t label, int on) { fm1_led_key(fw_matrix_of(label), on); }

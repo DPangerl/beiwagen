@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Modified for Beiwagen, 2026 (Daniel Pangerl): fw_usb_diag_t */
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): fw_usb_diag_t, fw_input_t.redraw */
 #ifndef FW_H
 #define FW_H
 #include <stdint.h>
@@ -39,6 +39,7 @@ typedef struct {
     int32_t knob[FW_KNOB_COUNT];
     uint32_t master;
     uint32_t battery;
+    uint32_t redraw;            /* 1: the screen was taken (the system settings): draw all of it again */
 } fw_input_t;
 
 typedef struct {
@@ -66,6 +67,11 @@ typedef struct {
 } fw_usb_diag_t;
 
 static volatile uint32_t fm1_ms;
+
+/* the system settings' theme (sys/settings.c): SYNC, the app on the other end decides */
+enum { FW_THEME_SYNC, FW_THEME_LIGHT, FW_THEME_DARK };
+static uint32_t fw_theme(void);
+static void fw_lights_off(uint32_t labels);   /* these buttons (FW_BTN_* bits) without the backlight */
 
 static void app_init(void);
 static void app_frame(const fw_input_t *in);

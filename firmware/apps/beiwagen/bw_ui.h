@@ -51,6 +51,7 @@ typedef struct {
     void (*tiles)(uint32_t ms, int full);   /* set: the page draws the grid itself (the tracks on HOME) */
     void (*corner)(uint32_t ms, int full);  /* set: the header's right side (the FX chain); else the page dots */
     void (*screen)(uint32_t ms, int full);  /* set: the page draws the whole screen (no header, tiles, footer) */
+    uint32_t corner_w;                      /* the corner's width (the title is cut before it) */
 } ui_page_t;
 
 typedef struct {
@@ -129,6 +130,34 @@ static int32_t ui_text(int32_t x, int32_t y, const felucca_font_t* f, const char
     return x;
 }
 
+/* text cut to max_w pixels; returns the end x */
+static int32_t ui_text_cut(int32_t x, int32_t y, const felucca_font_t* f, const char* s, int32_t max_w, uint16_t fg,
+                           uint16_t bg)
+{
+    char b[48];
+    uint32_t n = 0;
+    int32_t w = 0;
+    while (s[n] && n + 1u < sizeof b) {
+        const int32_t a = f->adv[glyph(f, (uint8_t)s[n])];
+        if (w + a > max_w)
+            break;
+        b[n] = s[n];
+        w += a;
+        n++;
+    }
+    b[n] = 0;
+    return ui_text(x, y, f, b, fg, bg);
+}
+
+/* a label on a filled chip (REC, SAVE): returns its width */
+static int32_t ui_chip(int32_t x, int32_t y, const char* s, uint16_t fill, uint16_t ink)
+{
+    const int32_t w = text_w(&FONT_T, s) + 8;
+    cv_rect(x, y, w, (int32_t)FONT_T.h + 1, fill);
+    ui_text(x + 4, y, &FONT_T, s, ink, fill);
+    return w;
+}
+
 static void ui_cat(char* b, const char* s, unsigned max) { str_cpy(b + str_len(b), s, max - str_len(b)); }
 
 static void ui_cat_int(char* b, int32_t v, unsigned max)
@@ -144,10 +173,12 @@ static uint32_t ui_tile_y(uint32_t i) { return UI_GRID_Y + (i >> 1) * (UI_TILE_H
 
 static void ui_header(const ui_section_t* s, uint32_t page)
 {
+    const ui_page_t* pg = s->pages[page];
+    const int32_t dots = !pg->corner && s->count > 1u ? 9 * (int32_t)s->count : 0;
     uint32_t i;
     cv_begin(240, UI_HEAD_H, C_BG);
-    ui_text(4, 0, &FONT_M, s->pages[page]->title, C_TEXT, C_BG);
-    if (!s->pages[page]->corner && s->count > 1u)   /* where SELECT is: a dot per page */
+    ui_text_cut(4, 0, &FONT_M, pg->title, (pg->corner ? 240 - (int32_t)pg->corner_w : 236 - dots) - 10, C_TEXT, C_BG);
+    if (dots)                               /* where SELECT is: a dot per page */
         for (i = 0; i < s->count; i++)
             cv_rect(232 - 9 * (int32_t)(s->count - 1u - i), 8, 6, 6, i == page ? C_TEXT : C_TILE_HI);
     cv_blit(0, 0);
@@ -216,7 +247,7 @@ static void ui_knob_tile(uint32_t i, const ui_param_t* p, int lit, int full)
         cv_begin(UI_TILE_W, UI_VAL_Y, bg);
         cv_rect(0, 0, UI_TILE_W, 4, kc);
         if (p)
-            ui_text(8, 9, &FONT_M, p->name, lit ? fg : C_SUB, bg);
+            ui_text_cut(8, 9, &FONT_M, p->name, (int32_t)UI_TILE_W - 16, lit ? fg : C_SUB, bg);
         cv_blit(x, y);
         if (!p) {
             lcd_fill(x, y + UI_VAL_Y, UI_TILE_W, UI_TILE_H - UI_VAL_Y, bg);

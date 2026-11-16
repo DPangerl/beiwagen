@@ -272,7 +272,7 @@ def ldr_wrap(image):
 def build_loader():
     LDR.mkdir(parents=True, exist_ok=True)
     src = FW / "loader"
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/sys"]
+    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/sys", "-Ibuild/gen", *name_flags()]   # the font, the name on its screen
     tc_all(("cc", "-c", src / "crt0_ldr.S", "-o", LDR / "crt0_ldr.o"),
            ("cc", *flags, "-c", src / "loader.c", "-o", LDR / "loader.o"))
     elf = LDR / "loader.elf"
@@ -504,10 +504,8 @@ def main():
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
             print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
     OUT.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(2) as ex:
-        gen, ldr = ex.submit(generate), ex.submit(build_loader)
-        gen.result()
-        ota = ldr.result()
+    generate()
+    ota = build_loader()            # after generate: its screen uses the font
     img, syms, dis, rt, headers = build_app()
     errors, notes = check(img, syms, dis, rt, headers)
     hal_err = mmio_check()

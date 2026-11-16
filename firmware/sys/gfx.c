@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
- * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit) */
+ * Modified for GATOR by npi3pak, 2026, from ORBIT 0.6.0 (dspaudio/orbit)
+ * Modified for Beiwagen, 2026 (Daniel Pangerl): CV_MAX can be set smaller (the update loader) */
 /* Small-canvas renderer (no full framebuffer). Draw text/lines into
  * an off-screen strip, then blit it in one DMA transfer. Pixels are stored
  * byte-swapped (the panel takes RGB565 big-endian). */
@@ -16,7 +17,9 @@ typedef struct {               /* proportional, see tools/gen_font.py */
 } felucca_font_t;
 #include "felucca_font.h"
 
-#define CV_MAX (240u * 124u)      /* the graph strip is 240 x 124 */
+#ifndef CV_MAX
+#define CV_MAX (240u * 124u)      /* the graph strip is 240 x 124 (the update loader: smaller) */
+#endif
 static uint16_t cv_px[CV_MAX] FW_POOL;
 static uint32_t cv_w, cv_h;
 static int32_t cv_oy;            /* y offset for graph drawing */

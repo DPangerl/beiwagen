@@ -238,6 +238,8 @@ static void app_frame(const fw_input_t* in)
 {
     fw_midi_t m;
     bw_gain_target = master_gain(in->master);
+    if (in->redraw)
+        full_draw = 1;
     while (fw_midi_read(&m))   /* (drained: a full ring would hold the host's SysEx back too) */
         ;
     {
